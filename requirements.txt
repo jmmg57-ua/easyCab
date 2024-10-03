@@ -1,3 +1,2 @@
-kafka-python
-sqlalchemy
-pytest
+kafka-python==2.0.2
+numpy==1.21.5
