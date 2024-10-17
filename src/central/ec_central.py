@@ -4,7 +4,7 @@ from kafka import KafkaConsumer, KafkaProducer
 import json
 import numpy as np
 from dataclasses import dataclass
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Taxi:
     id: int
-    position: Tuple[int, int]
     status: str  # 'FREE', 'BUSY'
-    color: str # 'RED', 'GREEN'
+    color: str  # 'RED' (parado) o 'GREEN' (en movimiento)
+    position: Tuple[int, int]
 
 @dataclass
 class Location:
@@ -68,8 +68,21 @@ class ECCentral:
                 for taxi in taxis.values():
                     f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}\n")
             logger.info("Taxis saved to file")
+            self.validate_taxis_file()
         except Exception as e:
             logger.error(f"Error saving taxis to file: {e}")
+
+    def validate_taxis_file(self):
+        """Valida el archivo de taxis para asegurarse de que no está corrupto."""
+        try:
+            with open(self.taxis_file, 'r') as f:
+                for line in f:
+                    parts = line.strip().split('#')
+                    if len(parts) != 5:
+                        raise ValueError(f"Invalid line in taxis file: {line}")
+            logger.info("Taxis file validation successful")
+        except Exception as e:
+            logger.error(f"Error validating taxis file: {e}")
 
     def update_map(self, taxis):
         # Reset map except for locations
@@ -92,7 +105,7 @@ class ECCentral:
             try:
                 map_data = {
                     'map': self.map.tolist(),
-                    'taxis': {k: {'position': v.position, 'status': v.status} 
+                    'taxis': {k: {'position': v.position, 'status': v.status, 'color': v.color} 
                              for k, v in taxis.items()},
                     'locations': {k: {'position': v.position} 
                                  for k, v in self.locations.items()}
@@ -130,12 +143,12 @@ class ECCentral:
         # Cargar los taxis desde el fichero
         taxis = self.load_taxis()
 
-        # Simple taxi selection: choose the first idle taxi
-        available_taxi = next((taxi for taxi in taxis.values() if taxi.status == 'IDLE'), None)
+        # Selección del taxi: elige el primer taxi que esté libre ('FREE')
+        available_taxi = next((taxi for taxi in taxis.values() if taxi.status == 'FREE'), None)
         
         if available_taxi:
-            available_taxi.status = 'MOVING'
-            available_taxi.destination = self.locations[destination].position
+            available_taxi.status = 'BUSY'  # Ahora está ocupado
+            available_taxi.color = 'GREEN'  # En movimiento (ya que va a recoger al cliente)
             
             # Actualizar estado del taxi en el fichero
             self.save_taxis(taxis)
@@ -160,13 +173,18 @@ class ECCentral:
         taxis = self.load_taxis()
 
         if taxi_id not in taxis:
-            taxis[taxi_id] = Taxi(taxi_id, (1, 1), 'IDLE')
-        
+            taxis[taxi_id] = Taxi(id=taxi_id, status='FREE', color='RED', position=(1, 1))  # Taxi en espera (parado)
+
         taxi = taxis[taxi_id]
         if 'position' in update:
             taxi.position = tuple(update['position'])
         if 'status' in update:
             taxi.status = update['status']
+            # Cambiar color según el estado: si está en movimiento, será 'GREEN', si está parado, 'RED'
+            if taxi.status == 'FREE':  # Taxi está libre, parado
+                taxi.color = 'RED'
+            elif taxi.status == 'BUSY':  # Taxi ocupado, en movimiento
+                taxi.color = 'GREEN'
         
         # Guardar los cambios en el fichero
         self.save_taxis(taxis)
