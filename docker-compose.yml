@@ -18,7 +18,7 @@ services:
     environment:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://ip1:9092  # Cambia ip1 por la IP de PC 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_CREATE_TOPICS: "test_topic:1:1"  # Puedes crear otros temas si es necesario
+      KAFKA_CREATE_TOPICS: "customer_requests:1:1,taxi_updates:1:1,taxi_instructions:1:1,map_updates:1:1"  # Define los tópicos
     depends_on:
       zookeeper:
         condition: service_healthy
