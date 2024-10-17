@@ -1,13 +1,20 @@
+# Usar una imagen de Python
 FROM python:3.9-slim
 
+# Establecer directorio de trabajo dentro del contenedor
 WORKDIR /app
 
-# Install requirements
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copiar el archivo de requisitos de la central
+COPY src/central/requirements.txt .
 
-# Copy source code
-COPY src/central ./central
+# Instalar las dependencias
+RUN pip install -r requirements.txt
 
-# Command to run the application
-CMD ["python", "-m", "central.ec_central"]
+# Copiar el código de la central al contenedor
+COPY src/central/ .
+
+# Exponer un puerto si es necesario (opcional, puede ser eliminado si no es relevante)
+EXPOSE 5000
+
+# Comando para ejecutar la central
+CMD ["python", "ec_central.py"]

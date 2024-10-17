@@ -1,11 +1,20 @@
+# Usar una imagen de Python
 FROM python:3.9-slim
 
+# Establecer directorio de trabajo dentro del contenedor
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copiar el archivo de requisitos de los clientes
+COPY src/customer/requirements.txt .
 
-COPY src/customer ./customer
-COPY src/common ./common
+# Instalar las dependencias
+RUN pip install -r requirements.txt
 
-CMD ["python", "-m", "customer.ec_customer"]
+# Copiar el código del cliente al contenedor
+COPY src/customer/ .
+
+# Exponer un puerto si es necesario (opcional, puede ser eliminado si no es relevante)
+EXPOSE 5002
+
+# Comando para ejecutar los clientes
+CMD ["python", "ec_customer.py"]
