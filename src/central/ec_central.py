@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 class Taxi:
     id: int
     position: Tuple[int, int]
-    status: str  # 'IDLE', 'MOVING', 'BUSY'
-    destination: Optional[Tuple[int, int]] = None
+    status: str  # 'FREE', 'BUSY'
+    color: str # 'RED', 'GREEN'
 
 @dataclass
 class Location:
@@ -29,11 +29,11 @@ class ECCentral:
         self.map_size = (20, 20)
         self.map = np.full(self.map_size, ' ', dtype=str)
         self.locations: Dict[str, Location] = {}
-        self.taxis: Dict[int, Taxi] = {}
+        self.taxis_file = '/data/taxis.txt'  # Ruta al fichero de taxis
         
     def load_map_config(self):
         try:
-            with open('/app/data/map_config.txt', 'r') as f:
+            with open('/data/map_config.txt', 'r') as f:
                 for line in f:
                     loc_id, x, y = line.strip().split()
                     x, y = int(x), int(y)
@@ -43,7 +43,35 @@ class ECCentral:
         except Exception as e:
             logger.error(f"Error loading map configuration: {e}")
 
-    def update_map(self):
+    def load_taxis(self):
+        """Carga los taxis desde el fichero."""
+        taxis = {}
+        try:
+            with open(self.taxis_file, 'r') as f:
+                for line in f:
+                    taxi_id, status, color, pos_x, pos_y = line.strip().split('#')
+                    taxis[int(taxi_id)] = Taxi(
+                        id=int(taxi_id),
+                        position=(int(pos_x), int(pos_y)),
+                        status=status,
+                        color=color
+                    )
+            logger.info("Taxis loaded from file")
+        except Exception as e:
+            logger.error(f"Error loading taxis from file: {e}")
+        return taxis
+
+    def save_taxis(self, taxis):
+        """Guarda los taxis en el fichero."""
+        try:
+            with open(self.taxis_file, 'w') as f:
+                for taxi in taxis.values():
+                    f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}\n")
+            logger.info("Taxis saved to file")
+        except Exception as e:
+            logger.error(f"Error saving taxis to file: {e}")
+
+    def update_map(self, taxis):
         # Reset map except for locations
         self.map = np.full(self.map_size, ' ', dtype=str)
         
@@ -53,19 +81,19 @@ class ECCentral:
             self.map[y, x] = loc.id
             
         # Add taxis
-        for taxi in self.taxis.values():
+        for taxi in taxis.values():
             x, y = taxi.position
             self.map[y, x] = str(taxi.id)
         
-        self.broadcast_map()
+        self.broadcast_map(taxis)
 
-    def broadcast_map(self):
+    def broadcast_map(self, taxis):
         if self.producer:
             try:
                 map_data = {
                     'map': self.map.tolist(),
                     'taxis': {k: {'position': v.position, 'status': v.status} 
-                             for k, v in self.taxis.items()},
+                             for k, v in taxis.items()},
                     'locations': {k: {'position': v.position} 
                                  for k, v in self.locations.items()}
                 }
@@ -98,13 +126,21 @@ class ECCentral:
         if destination not in self.locations:
             logger.error(f"Invalid destination: {destination}")
             return False
-        
+
+        # Cargar los taxis desde el fichero
+        taxis = self.load_taxis()
+
         # Simple taxi selection: choose the first idle taxi
-        available_taxi = next((taxi for taxi in self.taxis.values() if taxi.status == 'IDLE'), None)
+        available_taxi = next((taxi for taxi in taxis.values() if taxi.status == 'IDLE'), None)
         
         if available_taxi:
             available_taxi.status = 'MOVING'
             available_taxi.destination = self.locations[destination].position
+            
+            # Actualizar estado del taxi en el fichero
+            self.save_taxis(taxis)
+
+            # Enviar instrucciones al taxi
             self.producer.send('taxi_instructions', {
                 'taxi_id': available_taxi.id,
                 'instruction': 'PICKUP',
@@ -119,16 +155,24 @@ class ECCentral:
 
     def process_taxi_update(self, update):
         taxi_id = update['taxi_id']
-        if taxi_id not in self.taxis:
-            self.taxis[taxi_id] = Taxi(taxi_id, (1, 1), 'IDLE')
+
+        # Cargar taxis desde el fichero
+        taxis = self.load_taxis()
+
+        if taxi_id not in taxis:
+            taxis[taxi_id] = Taxi(taxi_id, (1, 1), 'IDLE')
         
-        taxi = self.taxis[taxi_id]
+        taxi = taxis[taxi_id]
         if 'position' in update:
             taxi.position = tuple(update['position'])
         if 'status' in update:
             taxi.status = update['status']
         
-        self.update_map()
+        # Guardar los cambios en el fichero
+        self.save_taxis(taxis)
+
+        # Actualizar el mapa
+        self.update_map(taxis)
 
     def run(self):
         if not self.connect_kafka():
