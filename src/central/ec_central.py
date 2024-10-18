@@ -97,14 +97,21 @@ class ECCentral:
         
         if destination not in self.locations:
             logger.error(f"Invalid destination: {destination}")
+            self.send_response_to_customer(customer_id, "KO")
             return False
+
+        #Carga los taxis desde el fichero
+        taxis = self.load_taxis()
         
         # Simple taxi selection: choose the first idle taxi
-        available_taxi = next((taxi for taxi in self.taxis.values() if taxi.status == 'IDLE'), None)
+        available_taxi = next((taxi for taxi in self.taxis.values() if taxi.status == 'FREE'), None)
         
         if available_taxi:
-            available_taxi.status = 'MOVING'
-            available_taxi.destination = self.locations[destination].position
+            available_taxi.status = 'BUSY'
+            available_taxi.color = 'GREEN'
+
+            self.save_taxis(taxis)
+            
             self.producer.send('taxi_instructions', {
                 'taxi_id': available_taxi.id,
                 'instruction': 'PICKUP',
@@ -112,11 +119,28 @@ class ECCentral:
                 'destination': self.locations[destination].position
             })
             logger.info(f"Assigned taxi {available_taxi.id} to customer {customer_id}")
+
+            self.send_response_to_customer(customer_id, "OK")
             return True
         else:
             logger.warning("No available taxis")
+            
+            self.send_response_to_customer(customer_id, "KO")
             return False
 
+    def send_response_to_customer(self, customer_id, status):
+        """Envia una respuesta OK o KO al cliente"""
+        response = {
+            'customer_id': customer_id,
+            'status': status
+        }
+        try:
+            self.producer.send('customer_responses', response)
+            self.producer.flush()
+            logger.info(f"Sent {status} response to customer {customer_id}")
+        except Exception as e:
+            logger.error(f"Failed to send {status} response to customer {customer_id}: {e}")
+    
     def process_taxi_update(self, update):
         taxi_id = update['taxi_id']
         if taxi_id not in self.taxis:
