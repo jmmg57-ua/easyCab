@@ -14,7 +14,8 @@ class DigitalEngine:
         self.ec_s_port = ec_s_port
         self.taxi_id = taxi_id
         self.position = [1, 1]  # Initial position
-        self.state = "IDLE"
+        self.status = "FREE"
+        self.color = "RED"
         self.destination = None
         
         # Connect to EC_Central
@@ -53,43 +54,47 @@ class DigitalEngine:
                 self.process_instruction(instruction)
 
     def process_instruction(self, instruction):
-        if instruction['type'] == 'MOVE':
+        if instruction['type'] == 'PICKUP':
             self.destination = instruction['destination']
-            self.state = "MOVING"
+            self.status = "BUSY"
+            self.color = "GREEN"
             self.move_to_destination()
         elif instruction['type'] == 'STOP':
-            self.state = "STOPPED"
+            self.status = "BUSY"
+            self.color = "RED"
         elif instruction['type'] == 'RESUME':
-            self.state = "MOVING"
+            self.status = "BUSY"
+            self.color = "GREEN"
+            self.move_to_destination()
         elif instruction['type'] == 'RETURN_TO_BASE':
             self.destination = [1, 1]
-            self.state = "MOVING"
+            self.status = "FREE"
+            self.color = "GREEN"
             self.move_to_destination()
 
     def move_to_destination(self):
-        while self.position != self.destination and self.state == "MOVING":
-            # Simple movement logic
-            if self.position[0] < self.destination[0]:
-                self.position[0] += 1
-            elif self.position[0] > self.destination[0]:
-                self.position[0] -= 1
-            elif self.position[1] < self.destination[1]:
-                self.position[1] += 1
-            elif self.position[1] > self.destination[1]:
-                self.position[1] -= 1
+        while self.position != self.destination and self.color == "GREEN":
+            # Simple movement logic (considering spherical geometry)
+            for i in range(2):
+                if self.position[i] < self.destination[i]:
+                    self.position[i] = (self.position[i] % 20) + 1
+                elif self.position[i] > self.destination[i]:
+                    self.position[i] = ((self.position[i] - 2) % 20) + 1
             
             self.send_position_update()
             time.sleep(1)  # Wait for 1 second between movements
         
         if self.position == self.destination:
-            self.state = "IDLE"
+            self.status = "FREE" if self.destination == [1, 1] else "BUSY"
+            self.color = "RED"
             self.send_position_update()
 
     def send_position_update(self):
         update = {
             'taxi_id': self.taxi_id,
             'position': self.position,
-            'state': self.state
+            'status': self.status,
+            'color': self.color
         }
         self.producer.send('taxi_updates', update)
 
@@ -99,11 +104,12 @@ class DigitalEngine:
         while True:
             data = conn.recv(1024).decode()
             if data == "KO":
-                self.state = "STOPPED"
+                self.color = "RED"
                 self.send_position_update()
-            elif data == "OK" and self.state == "STOPPED":
-                self.state = "MOVING"
+            elif data == "OK" and self.color == "RED" and self.status == "BUSY":
+                self.color = "GREEN"
                 self.send_position_update()
+                self.move_to_destination()
 
     def run(self):
         if not self.authenticate():
