@@ -57,6 +57,9 @@ class Customer:
             if response['customer_id'] == self.customer_id:
                 status = response['status']
                 self.logger.info(f"Received response: {status}")
+                if status == 'SERVICE_COMPLETED':
+                    time.sleep(4)
+                    self.run()
     
     def request_service(self, destination):
         request = {
