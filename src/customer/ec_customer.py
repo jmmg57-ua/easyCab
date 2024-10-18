@@ -53,7 +53,7 @@ class Customer:
             'timestamp': time.time()
         }
         try:
-            self.producer.send('taxi_requests', request)
+            self.producer.send('customer_requests', request)
             self.producer.flush()
             self.logger.info(f"Sent service request to destination: {destination}")
         except KafkaError as e:
