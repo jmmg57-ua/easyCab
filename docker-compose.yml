@@ -57,9 +57,9 @@ services:
       - kafka
       - central
     command: >
-      python ec_de.py ec_central 5000 kafka:9092 ec_de 6000 1  
+      python ec_de.py ec_central 5000 kafka:9092 ec_s 6000 1  
     environment:
-      - EC_CENTRAL_IP=EC_CENTRAL_IP
+      - EC_CENTRAL_IP=central
       - EC_CENTRAL_PORT=5000
       - KAFKA_BROKER=kafka:9092
       - EC_S_IP=localhost

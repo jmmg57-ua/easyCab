@@ -23,7 +23,7 @@ class Location:
 
 class ECCentral:
     def __init__(self):
-        self.kafka_bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
+        self.kafka_bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092') #Cambiar por ip de kafka
         self.producer = None
         self.consumer = None
         self.map_size = (20, 20)
