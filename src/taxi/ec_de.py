@@ -60,8 +60,9 @@ class DigitalEngine:
             self.color = "GREEN"
             self.move_to_destination()
         elif instruction['type'] == 'STOP':
-            self.status = "BUSY"
+            self.status = "STOPPED"
             self.color = "RED"
+            self.send_position_update()
         elif instruction['type'] == 'RESUME':
             self.status = "BUSY"
             self.color = "GREEN"
@@ -70,6 +71,9 @@ class DigitalEngine:
             self.destination = [1, 1]
             self.status = "FREE"
             self.color = "GREEN"
+            self.move_to_destination()
+        elif instruction['type'] == 'NEW_DESTINATION':
+            self.destination = instruction['destination']
             self.move_to_destination()
 
     def move_to_destination(self):
