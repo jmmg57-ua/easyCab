@@ -1,20 +1,15 @@
-# Usar una imagen de Python
+# Usar imagen base de Python
 FROM python:3.9-slim
 
-# Establecer directorio de trabajo dentro del contenedor
+# Crear un directorio de trabajo
 WORKDIR /app
 
-# Copiar el archivo de requisitos de los taxis
-COPY src/taxi/requirements.txt .
+# Copiar todos los archivos al contenedor
+COPY ./src/taxi /app
 
-# Instalar las dependencias
-RUN pip install -r requirements.txt
+# Instalar dependencias
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar el código del taxi al contenedor
-COPY src/taxi/ .
-
-# Exponer un puerto si es necesario (opcional, puede ser eliminado si no es relevante)
-EXPOSE 5001
-
-# Comando para ejecutar los taxis
-CMD ["python", "ec_taxi.py"]
+# Comando para ejecutar el EC_DE.py (ajusta según tus necesidades)
+CMD ["python", "ec_de.py", "localhost", "5555", "localhost:9092", "localhost", "6000", "1"]

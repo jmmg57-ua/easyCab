@@ -5,7 +5,7 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Copiar el archivo de requisitos de los clientes
-COPY src/customer/requirements.txt .
+COPY requirements.txt .
 
 # Instalar las dependencias
 RUN pip install -r requirements.txt
