@@ -140,7 +140,37 @@ class ECCentral:
             logger.info(f"Sent {status} response to customer {customer_id}")
         except Exception as e:
             logger.error(f"Failed to send {status} response to customer {customer_id}: {e}")
-    
+
+    def stop_taxi(self, taxi_id):
+    if taxi_id in self.taxis:
+        taxi = self.taxis[taxi_id]
+        taxi.status = 'STOPPED'  # Cambiar estado a detenido
+        taxi.color = 'RED'
+        self.update_map()
+        logger.info(f"Taxi {taxi_id} has been stopped.")
+
+    def resume_taxi(self, taxi_id):
+        if taxi_id in self.taxis:
+            taxi = self.taxis[taxi_id]
+            taxi.status = 'BUSY'
+            taxi.color = 'GREEN'
+            self.update_map()
+            logger.info(f"Taxi {taxi_id} has resumed service.")
+
+    def change_taxi_destination(self, taxi_id, new_destination):
+        if taxi_id in self.taxis:
+            taxi = self.taxis[taxi_id]
+            taxi.destination = new_destination
+            self.producer.send('taxi_instructions', {
+                'taxi_id': taxi_id,
+                'instruction': 'NEW_DESTINATION',
+                'destination': new_destination
+            })
+            logger.info(f"Taxi {taxi_id} destination changed to {new_destination}.")
+
+    def return_taxi_to_base(self, taxi_id):
+        self.change_taxi_destination(taxi_id, [1, 1])  # Regresar a la base
+
     def process_taxi_update(self, update):
     taxi_id = update['taxi_id']
     if taxi_id not in self.taxis:
