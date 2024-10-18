@@ -46,6 +46,18 @@ class Customer:
             self.logger.error(f"Error reading services file: {e}")
             return []
 
+    def listen_for_responses(self):
+        consumer = KafkaConsumer(
+            'customer_responses', 
+            bootstrap_servers=[self.kafka_broker],
+            value_deserializer=lambda v: json.loads(v.decode('utf-8'))
+        )
+        for message in consumer:
+            response = message.value
+            if response['customer_id'] == self.customer_id:
+                status = response['status']
+                self.logger.info(f"Received response: {status}")
+    
     def request_service(self, destination):
         request = {
             'customer_id': self.customer_id,
