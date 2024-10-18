@@ -142,17 +142,34 @@ class ECCentral:
             logger.error(f"Failed to send {status} response to customer {customer_id}: {e}")
     
     def process_taxi_update(self, update):
-        taxi_id = update['taxi_id']
-        if taxi_id not in self.taxis:
-            self.taxis[taxi_id] = Taxi(taxi_id, (1, 1), 'IDLE')
-        
-        taxi = self.taxis[taxi_id]
-        if 'position' in update:
-            taxi.position = tuple(update['position'])
-        if 'status' in update:
-            taxi.status = update['status']
-        
-        self.update_map()
+    taxi_id = update['taxi_id']
+    if taxi_id not in self.taxis:
+        self.taxis[taxi_id] = Taxi(taxi_id, (1, 1), 'IDLE')
+
+    taxi = self.taxis[taxi_id]
+    if 'position' in update:
+        taxi.position = tuple(update['position'])
+    if 'status' in update:
+        taxi.status = update['status']
+
+    # Notificar al cliente si el taxi ha llegado a su destino
+    if taxi.status == "END":
+        self.send_service_completion_notification(taxi.customer_id)
+
+    self.update_map()
+
+def send_service_completion_notification(self, customer_id):
+    """Envía una notificación al cliente de que el servicio ha concluido."""
+    response = {
+        'customer_id': customer_id,
+        'status': 'SERVICE_COMPLETED'
+    }
+    try:
+        self.producer.send('customer_responses', response)
+        self.producer.flush()
+        logger.info(f"Sent SERVICE_COMPLETED response to customer {customer_id}")
+    except Exception as e:
+        logger.error(f"Failed to send SERVICE_COMPLETED response to customer {customer_id}: {e}")
 
     def run(self):
         if not self.connect_kafka():
