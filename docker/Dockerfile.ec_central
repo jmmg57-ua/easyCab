@@ -7,6 +7,7 @@ WORKDIR /app
 # Copiar todos los archivos al contenedor
 COPY ./src/central /app
 
+EXPOSE  8080
 # Instalar dependencias
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

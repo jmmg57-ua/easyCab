@@ -49,24 +49,15 @@ services:
     command: >
       python ec_central.py
   
-  taxi:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.taxi
-    depends_on:
-      - kafka
-      - central
-    command: >
-      python ec_de.py ec_central 5000 kafka:9092 ec_s 6000 1  
-    environment:
-      - EC_CENTRAL_IP=central
-      - EC_CENTRAL_PORT=5000
-      - KAFKA_BROKER=kafka:9092
-      - EC_S_IP=localhost
-      - EC_S_PORT=6000
-      - TAXI_ID=1
-    ports:
-      - "6000:6000"
+  taxi1:
+    image: ec_de
+    command: ["python", "ec_de.py", "central", "8080", "kafka:9092", "sensor1", "5001", "1"] # Poner IP y Port de la central
+
+  taxi2:
+    image: ec_de
+    command: ["python", "ec_de.py", "central", "8080", "kafka:9092", "sensor2", "5002", "2"] # Poner IP y Port de la central
+
+
   customer:
     build:
       context: .

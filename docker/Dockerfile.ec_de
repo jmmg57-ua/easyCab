@@ -11,6 +11,13 @@ COPY ./src/taxi /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-ENV KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-ENV CENTRAL_HOST=central
-ENV TAXI_ID=1
+
+# Establecer variables de entorno por defecto (puedes cambiarlas en docker-compose si es necesario)
+ENV KAFKA_BROKER=kafka:9092
+ENV EC_CENTRAL_IP=central
+ENV EC_CENTRAL_PORT=8080
+ENV EC_S_IP=digital_engine
+ENV EC_S_PORT=5000
+
+# Ejecutar la aplicación (los argumentos del taxi serán pasados por la línea de comandos)
+CMD ["python", "digital_engine.py"]

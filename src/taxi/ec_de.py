@@ -1,4 +1,3 @@
-import os
 import socket
 import sys
 import threading
@@ -117,13 +116,16 @@ class DigitalEngine:
             time.sleep(1)  # Keep the main thread alive
 
 if __name__ == "__main__":
-    # Leer los parámetros desde variables de entorno
-    ec_central_ip = os.getenv('EC_CENTRAL_IP', 'localhost')
-    ec_central_port = int(os.getenv('EC_CENTRAL_PORT', 8080))
-    kafka_broker = os.getenv('KAFKA_BROKER', 'localhost:9092')
-    ec_s_ip = os.getenv('EC_S_IP', 'localhost')
-    ec_s_port = int(os.getenv('EC_S_PORT', 5000))
-    taxi_id = int(os.getenv('TAXI_ID', 1))
+    if len(sys.argv) != 7:
+        print("Usage: python EC_DE.py <EC_Central_IP> <EC_Central_Port> <Kafka_Broker> <EC_S_IP> <EC_S_Port> <Taxi_ID>")
+        sys.exit(1)
+    
+    ec_central_ip = sys.argv[1]
+    ec_central_port = int(sys.argv[2])
+    kafka_broker = sys.argv[3]
+    ec_s_ip = sys.argv[4]
+    ec_s_port = int(sys.argv[5])
+    taxi_id = int(sys.argv[6])
     
     digital_engine = DigitalEngine(ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id)
     digital_engine.run()
