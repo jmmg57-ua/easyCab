@@ -11,5 +11,8 @@ COPY ./src/taxi /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Comando para ejecutar el EC_DE.py (ajusta según tus necesidades)
-CMD ["python", "ec_de.py", "central", "5000", "kafka:9092", "localhost", "6000", "1"]
+# Establecer variables de entorno necesarias, como la IP del Digital Engine
+ENV DIGITAL_ENGINE_HOST=digital_engine
+
+# Ejecutar la aplicación
+CMD ["python", "sensors.py"]

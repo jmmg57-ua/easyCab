@@ -10,6 +10,3 @@ COPY ./src/central /app
 # Instalar dependencias
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Comando para ejecutar la central
-CMD ["python", "ec_central.py", "central", "5000", "kafka:9092", "localhost", "6000"]
