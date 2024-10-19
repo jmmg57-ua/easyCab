@@ -14,7 +14,7 @@ class Customer:
         self.consumer = None
         
         # Set up logging
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - Customer %(customer_id)s: %(message)s')
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - Customer %(message)s')
         self.logger = logging.getLogger(__name__)
         
         self.setup_kafka()
@@ -23,20 +23,23 @@ class Customer:
         retry_count = 0
         while retry_count < 5:
             try:
+                # Set up Kafka Producer
                 self.producer = KafkaProducer(
                     bootstrap_servers=[self.kafka_broker],
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                     retries=3
                 )
+                self.logger.info("Kafka producer set up successfully")
+
+                # Set up Kafka Consumer for responses
                 self.consumer = KafkaConsumer(
                     'taxi_responses',
                     bootstrap_servers=[self.kafka_broker],
-                    group_id=self.customer_id,
-                    value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-                    auto_offset_reset='earliest',
-                    enable_auto_commit=True
+                    value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+                    group_id=self.customer_id,  # Unique group ID for this customer
+                    auto_offset_reset='earliest'
                 )
-                self.logger.info("Kafka producer and consumer set up successfully")
+                self.logger.info("Kafka consumer set up successfully")
                 return
             except KafkaError as e:
                 retry_count += 1
@@ -68,16 +71,21 @@ class Customer:
         except KafkaError as e:
             self.logger.error(f"Failed to send service request: {e}")
 
-    def handle_responses(self):
+    def wait_for_confirmation(self):
+        """
+        Wait for a confirmation from CENTRAL, either 'OK' or 'KO' for the current service request.
+        """
+        self.logger.info("Waiting for confirmation from CENTRAL...")
         for message in self.consumer:
             response = message.value
-            self.logger.info(f"Received response: {response['status']} for request to destination: {response['destination']}")
-            if response['status'] == 'OK':
-                # El servicio fue aceptado
-                self.logger.info("Taxi assigned successfully.")
-            else:
-                # El servicio fue denegado
-                self.logger.info("Service request denied.")
+            if response.get('customer_id') == self.customer_id:
+                status = response.get('status')
+                if status == 'OK':
+                    self.logger.info(f"Service accepted: {response}")
+                    return True
+                elif status == 'KO':
+                    self.logger.info(f"Service rejected: {response}")
+                    return False
 
     def run(self):
         services = self.read_services()
@@ -85,14 +93,16 @@ class Customer:
             self.logger.warning("No services found in the file. Exiting.")
             return
 
-        # Iniciar el manejo de respuestas en un hilo separado
-        import threading
-        response_thread = threading.Thread(target=self.handle_responses)
-        response_thread.start()
-
         for service in services:
             self.request_service(service)
-            time.sleep(4)  # Esperar 4 segundos antes de la siguiente solicitud
+            confirmation = self.wait_for_confirmation()
+
+            if confirmation:
+                self.logger.info(f"Service to {service} completed successfully.")
+            else:
+                self.logger.warning(f"Service to {service} was rejected.")
+
+            time.sleep(4)  # Wait 4 seconds before requesting the next service
 
         self.logger.info("All services requested. Exiting.")
 

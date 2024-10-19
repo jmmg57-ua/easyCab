@@ -1,6 +1,7 @@
 import os
 import logging
 from kafka import KafkaConsumer, KafkaProducer
+from kafka.errors import KafkaError  # Asegúrate de importar KafkaError
 import json
 import numpy as np
 from dataclasses import dataclass
@@ -161,8 +162,29 @@ class ECCentral:
                 'destination': self.locations[destination].position
             })
             logger.info(f"Assigned taxi {available_taxi.id} to customer {customer_id}")
+            
+            #Send confirmation back to customer
+            # Prepare confirmation response
+            response = {
+                'customer_id': customer_id,
+                'status': "OK",
+                'assigned_taxi': available_taxi.id
+            }
+            
+            try:
+                self.producer.send('taxi_responses', response)
+                self.producer.flush()
+                self.logger.info(f"Sent confirmation to customer {customer_id}: {response}")
+            except KafkaError as e:
+                self.logger.error(f"Failed to send confirmation_ {e}")
+            
             return True
         else:
+            response = {
+                'customer_id': customer_id,
+                'status': "KO",
+                'assigned_taxi': 0
+            }
             logger.warning("No available taxis")
             return False
 

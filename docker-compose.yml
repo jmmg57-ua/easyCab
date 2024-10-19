@@ -21,7 +21,7 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_CREATE_TOPICS: "customer_requests:1:1,taxi_updates:1:1,taxi_instructions:1:1,map_updates:1:1"
+      KAFKA_CREATE_TOPICS: "customer_requests:1:1,taxi_responses:1:1,taxi_updates:1:1,taxi_instructions:1:1,map_updates:1:1"
     depends_on:
       zookeeper:
         condition: service_healthy
@@ -34,7 +34,7 @@ services:
   central:
     build:
       context: .
-      dockerfile: docker/Dockerfile.central
+      dockerfile: docker/Dockerfile.ec_central
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     volumes:
@@ -61,14 +61,14 @@ services:
   customer:
     build:
       context: .
-      dockerfile: docker/Dockerfile.customer
+      dockerfile: docker/Dockerfile.ec_customer
     depends_on:
       - kafka
     volumes:
       - ./data:/data  # Monta el directorio de datos en el contenedor
-    command: >
-      python ec_customer.py localhost:9092 1 /data/services.txt
     environment:
       - KAFKA_BROKER=localhost:9092
       - CUSTOMER_ID=1
       - SERVICES_FILE=/data/services.txt
+    command: >
+      python ec_customer.py kafka:9092 1 /data/services.txt
