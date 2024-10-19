@@ -2,7 +2,7 @@ import sys
 import json
 import time
 import logging
-from kafka import KafkaProducer
+from kafka import KafkaProducer, KafkaConsumer
 from kafka.errors import KafkaError
 
 class Customer:
@@ -11,6 +11,7 @@ class Customer:
         self.customer_id = customer_id
         self.services_file = services_file
         self.producer = None
+        self.consumer = None
         
         # Set up logging
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - Customer %(customer_id)s: %(message)s')
@@ -27,7 +28,15 @@ class Customer:
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                     retries=3
                 )
-                self.logger.info("Kafka producer set up successfully")
+                self.consumer = KafkaConsumer(
+                    'taxi_responses',
+                    bootstrap_servers=[self.kafka_broker],
+                    group_id=self.customer_id,
+                    value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+                    auto_offset_reset='earliest',
+                    enable_auto_commit=True
+                )
+                self.logger.info("Kafka producer and consumer set up successfully")
                 return
             except KafkaError as e:
                 retry_count += 1
@@ -59,15 +68,31 @@ class Customer:
         except KafkaError as e:
             self.logger.error(f"Failed to send service request: {e}")
 
+    def handle_responses(self):
+        for message in self.consumer:
+            response = message.value
+            self.logger.info(f"Received response: {response['status']} for request to destination: {response['destination']}")
+            if response['status'] == 'OK':
+                # El servicio fue aceptado
+                self.logger.info("Taxi assigned successfully.")
+            else:
+                # El servicio fue denegado
+                self.logger.info("Service request denied.")
+
     def run(self):
         services = self.read_services()
         if not services:
             self.logger.warning("No services found in the file. Exiting.")
             return
 
+        # Iniciar el manejo de respuestas en un hilo separado
+        import threading
+        response_thread = threading.Thread(target=self.handle_responses)
+        response_thread.start()
+
         for service in services:
             self.request_service(service)
-            time.sleep(4)  # Wait 4 seconds before next request
+            time.sleep(4)  # Esperar 4 segundos antes de la siguiente solicitud
 
         self.logger.info("All services requested. Exiting.")
 
