@@ -37,9 +37,6 @@ services:
       - ./data:/data  # Monta el directorio de datos en el contenedor para archivos como taxis.txt y map_config.txt
     depends_on:
       - kafka
-    networks:
-      - backend
-      - kafka_network
     healthcheck:
       test: ["CMD-SHELL", "python -c 'from kafka import KafkaProducer; KafkaProducer(bootstrap_servers=[\"kafka:9092\"])'"]
       interval: 30s
@@ -57,9 +54,6 @@ services:
     depends_on:
       - kafka
       - central
-    networks:
-      - backend
-      - kafka_network
     command: >
       python ec_de.py localhost 8080 kafka:9092 localhost 7070 1
 
@@ -72,8 +66,6 @@ services:
       - "9002:9002"
     depends_on:
       - dengine
-    networks:
-      - backend
     command: >
       python ec_s.py dengine:7070
 
@@ -90,12 +82,5 @@ services:
       - KAFKA_BROKER=localhost:9092
       - CUSTOMER_ID=1
       - SERVICES_FILE=/data/services.txt
-    networks:
-      - backend
-      - kafka_network
     command: >
       python ec_customer.py kafka:9092 1 /data/services.txt
-
-networks:
-  backend:
-  kafka_network:
