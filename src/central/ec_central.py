@@ -1,5 +1,6 @@
 import os
 import logging
+import sys
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.errors import KafkaError  # Asegúrate de importar KafkaError
 import json
@@ -23,8 +24,8 @@ class Location:
     position: Tuple[int, int]
 
 class ECCentral:
-    def __init__(self):
-        self.kafka_bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092') #Cambiar por ip de kafka
+    def __init__(self, kafka_bootstrap_servers):
+        self.kafka_bootstrap_servers = kafka_bootstrap_servers
         self.producer = None
         self.consumer = None
         self.map_size = (20, 20)
@@ -240,5 +241,10 @@ class ECCentral:
                 self.consumer.close()
 
 if __name__ == "__main__":
-    central = ECCentral()
+    if len(sys.argv) < 2:
+        print("Usage: python ec_central.py <kafka_bootstrap_servers>")
+        sys.exit(1)
+
+    kafka_bootstrap_servers = sys.argv[1]  # Recoge el primer parámetro pasado al script
+    central = ECCentral(kafka_bootstrap_servers)  # Pasa el parámetro al inicializador
     central.run()

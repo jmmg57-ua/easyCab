@@ -1,18 +1,11 @@
-# Usar imagen base de Python
+# Dockerfile.ec_s
 FROM python:3.9-slim
 
-# Crear un directorio de trabajo
+# Establecer el directorio de trabajo
 WORKDIR /app
 
-# Copiar todos los archivos al contenedor
-COPY ./src/taxi /app
+# Copiar los archivos necesarios para el Sensor
+COPY ./src/taxi/ec_s.py /app
 
-# Instalar dependencias
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Establecer variables de entorno necesarias, como la IP del Digital Engine
-ENV DIGITAL_ENGINE_HOST=digital_engine
-
-# Ejecutar la aplicación
-CMD ["python", "sensors.py"]
+# Exponer el puerto necesario para la comunicación con EC_DE
+EXPOSE 7070

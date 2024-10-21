@@ -116,7 +116,9 @@ class DigitalEngine:
             time.sleep(1)  # Keep the main thread alive
 
 if __name__ == "__main__":
+
     if len(sys.argv) != 7:
+        print(f"Arguments received: {sys.argv}")
         print("Usage: python EC_DE.py <EC_Central_IP> <EC_Central_Port> <Kafka_Broker> <EC_S_IP> <EC_S_Port> <Taxi_ID>")
         sys.exit(1)
     

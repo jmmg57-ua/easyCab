@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   zookeeper:
     image: wurstmeister/zookeeper
@@ -35,27 +33,49 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_central
-    environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     volumes:
       - ./data:/data  # Monta el directorio de datos en el contenedor para archivos como taxis.txt y map_config.txt
     depends_on:
       - kafka
+    networks:
+      - backend
+      - kafka_network
     healthcheck:
       test: ["CMD-SHELL", "python -c 'from kafka import KafkaProducer; KafkaProducer(bootstrap_servers=[\"kafka:9092\"])'"]
       interval: 30s
       timeout: 10s
       retries: 5
     command: >
-      python ec_central.py
+      python ec_central.py kafka:9092
   
-  taxi1:
-    image: ec_de
-    command: ["python", "ec_de.py", "central", "8080", "kafka:9092", "sensor1", "5001", "1"] # Poner IP y Port de la central
+  dengine:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_de
+    ports:
+      - "9001:9001"
+    depends_on:
+      - kafka
+      - central
+    networks:
+      - backend
+      - kafka_network
+    command: >
+      python ec_de.py localhost 8080 kafka:9092 localhost 7070 1
 
-  taxi2:
-    image: ec_de
-    command: ["python", "ec_de.py", "central", "8080", "kafka:9092", "sensor2", "5002", "2"] # Poner IP y Port de la central
+
+  sensor:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_s
+    ports:
+      - "9002:9002"
+    depends_on:
+      - dengine
+    networks:
+      - backend
+    command: >
+      python ec_s.py dengine:7070
 
 
   customer:
@@ -70,5 +90,12 @@ services:
       - KAFKA_BROKER=localhost:9092
       - CUSTOMER_ID=1
       - SERVICES_FILE=/data/services.txt
+    networks:
+      - backend
+      - kafka_network
     command: >
       python ec_customer.py kafka:9092 1 /data/services.txt
+
+networks:
+  backend:
+  kafka_network:
