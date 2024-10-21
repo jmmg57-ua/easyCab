@@ -1,5 +1,6 @@
 import os
 import logging
+import socket
 import sys
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.errors import KafkaError  # Asegúrate de importar KafkaError
@@ -24,8 +25,9 @@ class Location:
     position: Tuple[int, int]
 
 class ECCentral:
-    def __init__(self, kafka_bootstrap_servers):
+    def __init__(self, kafka_bootstrap_servers, listen_port_de):
         self.kafka_bootstrap_servers = kafka_bootstrap_servers
+        self.listen_port_de = listen_port_de
         self.producer = None
         self.consumer = None
         self.map_size = (20, 20)
@@ -86,6 +88,27 @@ class ECCentral:
         except Exception as e:
             logger.error(f"Error validating taxis file: {e}")
 
+    def handle_taxi_auth(self, conn, addr):
+        """Maneja la autenticación del taxi."""
+        logger.info(f"Connection from taxi at {addr}")
+        try:
+            data = conn.recv(1024).decode('utf-8')
+            taxi_id = int(data.strip())
+            logger.info(f"Authenticating taxi with ID: {taxi_id}")
+            
+            # Aquí puedes implementar la lógica de autenticación
+            taxis = self.load_taxis()
+            if taxi_id in taxis:
+                conn.sendall(b"AUTH_SUCCESS")
+                logger.info(f"Taxi {taxi_id} authenticated successfully.")
+            else:
+                conn.sendall(b"AUTH_FAILURE")
+                logger.warning(f"Taxi {taxi_id} authentication failed.")
+        except Exception as e:
+            logger.error(f"Error during taxi authentication: {e}")
+        finally:
+            conn.close()
+    
     def update_map(self, taxis):
         # Reset map except for locations
         self.map = np.full(self.map_size, ' ', dtype=str)
@@ -221,17 +244,26 @@ class ECCentral:
 
         self.load_map_config()
         logger.info("EC_Central is running...")
-        
+
+        # Configurar el servidor de sockets
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind(('0.0.0.0', self.listen_port))
+        self.server_socket.listen(5)  # Permitir hasta 5 conexiones en espera
+        logger.info(f"Listening for taxi connections on port {self.listen_port}...")
+
         try:
-            for message in self.consumer:
-                topic = message.topic
-                data = message.value
-                
-                if topic == 'customer_requests':
-                    self.process_customer_request(data)
-                elif topic == 'taxi_updates':
-                    self.process_taxi_update(data)
-                
+            while True:
+                conn, addr = self.server_socket.accept()
+                self.handle_taxi_auth(conn, addr)
+
+                for message in self.consumer:
+                    topic = message.topic
+                    data = message.value
+
+                    if topic == 'customer_requests':
+                        self.process_customer_request(data)
+                    elif topic == 'taxi_updates':
+                        self.process_taxi_update(data)
         except KeyboardInterrupt:
             logger.info("Shutting down EC_Central...")
         finally:
@@ -239,12 +271,15 @@ class ECCentral:
                 self.producer.close()
             if self.consumer:
                 self.consumer.close()
-
+            if self.server_socket:
+                self.server_socket.close()
+                
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python ec_central.py <kafka_bootstrap_servers>")
+    if len(sys.argv) < 3:
+        print("Usage: python ec_central.py <kafka_bootstrap_servers> <listen_port>")
         sys.exit(1)
 
-    kafka_bootstrap_servers = sys.argv[1]  # Recoge el primer parámetro pasado al script
-    central = ECCentral(kafka_bootstrap_servers)  # Pasa el parámetro al inicializador
+    kafka_bootstrap_servers = sys.argv[1]
+    listen_port = int(sys.argv[2])
+    central = ECCentral(kafka_bootstrap_servers, listen_port)
     central.run()
