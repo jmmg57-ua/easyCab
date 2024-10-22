@@ -34,6 +34,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_central
+    ports:
+      - "8000:8000"
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092   # Kafka accesible dentro de la red interna
     volumes:
@@ -46,7 +48,7 @@ services:
       timeout: 10s
       retries: 5
     command: >
-      python ec_central.py kafka:9092 8080
+      python ec_central.py kafka:9092 8000
   
   dengine:
     build:
@@ -58,19 +60,17 @@ services:
       - kafka
       - central
     command: >
-      python ec_de.py central 8080 kafka:9092 sensor 7070 1
+      python ec_de.py central 8000 kafka:9092 localhost 9000 1
 
 
   sensor:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_s
-    ports:
-      - "9002:9002"
     depends_on:
       - dengine
     command: >
-      python ec_s.py dengine:7070
+      python ec_s.py localhost 9000
 
 
   customer:
