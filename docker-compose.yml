@@ -12,9 +12,10 @@ services:
   kafka:
     image: wurstmeister/kafka
     ports:
-      - "9092:9092"
+      - "9092:9092"       # Puerto para acceso interno dentro de la red Docker
+      - "29092:29092"     # Puerto para acceso externo desde la máquina host
     environment:
-      KAFKA_LISTENERS: PLAINTEXT_INTERNAL://0.0.0.0:9092,PLAINTEXT_EXTERNAL://localhost:29092
+      KAFKA_LISTENERS: PLAINTEXT_INTERNAL://0.0.0.0:9092,PLAINTEXT_EXTERNAL://0.0.0.0:29092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://localhost:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
@@ -33,8 +34,10 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_central
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092   # Kafka accesible dentro de la red interna
     volumes:
-      - ./data:/data  # Monta el directorio de datos en el contenedor para archivos como taxis.txt y map_config.txt
+      - ./data:/data  # Monta el directorio de datos en el contenedor
     depends_on:
       - kafka
     healthcheck:
@@ -79,7 +82,7 @@ services:
     volumes:
       - ./data:/data  # Monta el directorio de datos en el contenedor
     environment:
-      - KAFKA_BROKER=localhost:9092
+      - KAFKA_BROKER=kafka:9092       # Cambiar de localhost a kafka para conectarse internamente a Kafka
       - CUSTOMER_ID=1
       - SERVICES_FILE=/data/services.txt
     command: >
