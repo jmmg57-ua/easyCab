@@ -46,7 +46,7 @@ services:
       timeout: 10s
       retries: 5
     command: >
-      python ec_central.py kafka:9092
+      python ec_central.py kafka:9092 8080
   
   dengine:
     build:
@@ -58,7 +58,7 @@ services:
       - kafka
       - central
     command: >
-      python ec_de.py localhost 8080 kafka:9092 localhost 7070 1
+      python ec_de.py central 8080 kafka:9092 sensor 7070 1
 
 
   sensor:

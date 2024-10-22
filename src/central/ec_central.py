@@ -25,9 +25,9 @@ class Location:
     position: Tuple[int, int]
 
 class ECCentral:
-    def __init__(self, kafka_bootstrap_servers, listen_port_de):
+    def __init__(self, kafka_bootstrap_servers, listen_port):
         self.kafka_bootstrap_servers = kafka_bootstrap_servers
-        self.listen_port_de = listen_port_de
+        self.listen_port = listen_port
         self.producer = None
         self.consumer = None
         self.map_size = (20, 20)
