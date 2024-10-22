@@ -8,6 +8,8 @@ import json
 import numpy as np
 from dataclasses import dataclass
 from typing import Dict, Tuple
+import threading
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -91,6 +93,7 @@ class ECCentral:
     def handle_taxi_auth(self, conn, addr):
         """Maneja la autenticación del taxi."""
         logger.info(f"Connection from taxi at {addr}")
+
         try:
             data = conn.recv(1024).decode('utf-8')
             taxi_id = int(data.strip())
@@ -171,6 +174,8 @@ class ECCentral:
         # Selección del taxi: elige el primer taxi que esté libre ('FREE')
         available_taxi = next((taxi for taxi in taxis.values() if taxi.status == 'FREE'), None)
         
+        
+        
         if available_taxi:
             available_taxi.status = 'BUSY'  # Ahora está ocupado
             available_taxi.color = 'GREEN'  # En movimiento (ya que va a recoger al cliente)
@@ -238,12 +243,26 @@ class ECCentral:
         # Actualizar el mapa
         self.update_map(taxis)
 
+    def kafka_listener(self):
+        """Hilo para escuchar los mensajes de Kafka."""
+        for message in self.consumer:
+            topic = message.topic
+            data = message.value
+
+            if topic == 'customer_requests':
+                self.process_customer_request(data)
+            elif topic == 'taxi_updates':
+                self.process_taxi_update(data)
+
     def run(self):
         if not self.connect_kafka():
             return
 
         self.load_map_config()
+        self.load_taxis()
         logger.info("EC_Central is running...")
+        kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
+        kafka_thread.start()
 
         # Configurar el servidor de sockets
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -254,16 +273,8 @@ class ECCentral:
         try:
             while True:
                 conn, addr = self.server_socket.accept()
-                self.handle_taxi_auth(conn, addr)
-
-                for message in self.consumer:
-                    topic = message.topic
-                    data = message.value
-
-                    if topic == 'customer_requests':
-                        self.process_customer_request(data)
-                    elif topic == 'taxi_updates':
-                        self.process_taxi_update(data)
+                # Crear un hilo para manejar la autenticación del taxi
+                threading.Thread(target=self.handle_taxi_auth, args=(conn, addr), daemon=True).start()
         except KeyboardInterrupt:
             logger.info("Shutting down EC_Central...")
         finally:
@@ -273,7 +284,7 @@ class ECCentral:
                 self.consumer.close()
             if self.server_socket:
                 self.server_socket.close()
-                
+            
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("Usage: python ec_central.py <kafka_bootstrap_servers> <listen_port>")
