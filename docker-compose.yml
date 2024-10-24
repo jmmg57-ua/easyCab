@@ -16,7 +16,7 @@ services:
       - "29092:29092"     # Puerto para acceso externo desde la máquina host
     environment:
       KAFKA_LISTENERS: PLAINTEXT_INTERNAL://0.0.0.0:9092,PLAINTEXT_EXTERNAL://0.0.0.0:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://0.0.0.0:29092 #Cambiar external por IP que hostee kafka
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://192.168.1.131:29092 #Cambiar external por IP que hostee kafka
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -39,7 +39,7 @@ services:
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092   # Cambiar por ip y port host kafka
     volumes:
-      - ./data:/data  # Monta el directorio de datos en el contenedor
+      - ./data:/data  
     depends_on:
       - kafka
     healthcheck:
@@ -83,9 +83,9 @@ services:
     depends_on:
       - kafka
     volumes:
-      - ./data:/data  # Monta el directorio de datos en el contenedor
+      - ./data:/data 
     environment:
-      - KAFKA_BROKER=kafka:9092       # Cambiar de localhost a kafka para conectarse internamente a Kafka
+      - KAFKA_BROKER=kafka:9092 
       - CUSTOMER_ID=1
       - SERVICES_FILE=/data/services.txt
     command: >

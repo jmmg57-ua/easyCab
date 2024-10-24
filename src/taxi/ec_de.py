@@ -19,8 +19,9 @@ class DigitalEngine:
         self.ec_s_ip = ec_s_ip
         self.ec_s_port = ec_s_port
         self.taxi_id = taxi_id
+        self.status = "FREE"   
+        self.color = "RED"     
         self.position = [1, 1]  # Initial position
-        self.state = "IDLE"
         self.destination = None
         
         # Connect to EC_Central

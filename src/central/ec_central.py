@@ -102,10 +102,10 @@ class ECCentral:
             # Aquí puedes implementar la lógica de autenticación
             taxis = self.load_taxis()
             if taxi_id in taxis:
-                conn.sendall(b"AUTH_SUCCESS")
+                conn.sendall(b"OK")
                 logger.info(f"Taxi {taxi_id} authenticated successfully.")
             else:
-                conn.sendall(b"AUTH_FAILURE")
+                conn.sendall(b"KO")
                 logger.warning(f"Taxi {taxi_id} authentication failed.")
         except Exception as e:
             logger.error(f"Error during taxi authentication: {e}")
