@@ -62,19 +62,19 @@ class DigitalEngine:
     def process_instruction(self, instruction):
         if instruction['type'] == 'MOVE':
             self.destination = instruction['destination']
-            self.state = "MOVING"
+            self.color = "GREEN"
             self.move_to_destination()
         elif instruction['type'] == 'STOP':
-            self.state = "STOPPED"
+            self.color = "RED"
         elif instruction['type'] == 'RESUME':
-            self.state = "MOVING"
+            self.color = "GREEN"
         elif instruction['type'] == 'RETURN_TO_BASE':
             self.destination = [1, 1]
-            self.state = "MOVING"
+            self.color = "GREEN"
             self.move_to_destination()
 
     def move_to_destination(self):
-        while self.position != self.destination and self.state == "MOVING":
+        while self.position != self.destination and self.color == "GREEN":
             # Simple movement logic
             if self.position[0] < self.destination[0]:
                 self.position[0] += 1
@@ -89,14 +89,15 @@ class DigitalEngine:
             time.sleep(1)  # Wait for 1 second between movements
         
         if self.position == self.destination:
-            self.state = "IDLE"
+            self.color = "IDLE"
             self.send_position_update()
 
     def send_position_update(self):
         update = {
             'taxi_id': self.taxi_id,
-            'position': self.position,
-            'state': self.state
+            'status': self.status,
+            'color': self.color,
+            'position': self.position
         }
         self.producer.send('taxi_updates', update)
 
@@ -106,10 +107,10 @@ class DigitalEngine:
         while True:
             data = conn.recv(1024).decode()
             if data == "KO":
-                self.state = "STOPPED"
+                self.color = "RED"
                 self.send_position_update()
-            elif data == "OK" and self.state == "STOPPED":
-                self.state = "MOVING"
+            elif data == "OK" and self.color == "RED":
+                self.color = "GREEN"
                 self.send_position_update()
 
     def run(self):
