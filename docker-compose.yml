@@ -15,8 +15,8 @@ services:
       - "9092:9092"       # Puerto para acceso interno dentro de la red Docker
       - "29092:29092"     # Puerto para acceso externo desde la máquina host
     environment:
-      KAFKA_LISTENERS: PLAINTEXT_INTERNAL://0.0.0.0:9092,PLAINTEXT_EXTERNAL://0.0.0.0:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://localhost:29092
+      KAFKA_LISTENERS: PLAINTEXT_INTERNAL://0.0.0.0:9092,PLAINTEXT_EXTERNAL://192.168.131:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://192.168.131:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -37,7 +37,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092   # Kafka accesible dentro de la red interna
+      - KAFKA_BOOTSTRAP_SERVERS=192.168.143:29092   # Kafka accesible dentro de la red interna
     volumes:
       - ./data:/data  # Monta el directorio de datos en el contenedor
     depends_on:
@@ -48,7 +48,7 @@ services:
       timeout: 10s
       retries: 5
     command: >
-      python ec_central.py kafka:9092 8000
+      python ec_central.py 192.168.143:29092 8000
   
   dengine:
     build:
@@ -60,7 +60,7 @@ services:
       - kafka
       - central
     command: >
-      python ec_de.py central 8000 kafka:9092 localhost 9000 1
+      python ec_de.py central 8000 192.168.143:29092 localhost 9000 1
 
 
   sensor:
