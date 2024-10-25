@@ -113,6 +113,7 @@ class ECCentral:
             conn.close()
     
     def update_map(self, taxis):
+        #COMPROBAR SI LO HACE
         # Reset map except for locations
         self.map = np.full(self.map_size, ' ', dtype=str)
         
@@ -126,8 +127,10 @@ class ECCentral:
             x, y = taxi.position
             self.map[y, x] = str(taxi.id)
         
+        #MOSTRAR POR CONSOLA O PANTALLA
         self.broadcast_map(taxis)
 
+#INSPECCIONAR
     def broadcast_map(self, taxis):
         if self.producer:
             try:
@@ -163,6 +166,7 @@ class ECCentral:
     def process_customer_request(self, request):
         customer_id = request['customer_id']
         destination = request['destination']
+        #LOCATION GUARDAR TAMBIEN
         
         if destination not in self.locations:
             logger.error(f"Invalid destination: {destination}")
@@ -184,11 +188,12 @@ class ECCentral:
             self.save_taxis(taxis)
 
             # Enviar instrucciones al taxi
+            #DEFINIR TODAS LAS INSTRUCCIONES
             self.producer.send('taxi_instructions', {
                 'taxi_id': available_taxi.id,
-                'instruction': 'PICKUP',
+                'instruction': 'MOVE',
                 'customer_id': customer_id,
-                'destination': self.locations[destination].position
+                'destination': self.locations[destination].position     #PRIMERO TIENE QUE IR A LA UBI, DESPUES A LA LOCATION
             })
             logger.info(f"Assigned taxi {available_taxi.id} to customer {customer_id}")
             
@@ -223,6 +228,7 @@ class ECCentral:
         # Cargar taxis desde el fichero
         taxis = self.load_taxis()
 
+        #NO SABEMOS SI PODEMOS CREAR TAXIS SI NO HAY AUN
         if taxi_id not in taxis:
             taxis[taxi_id] = Taxi(id=taxi_id, status='FREE', color='RED', position=(1, 1))  # Taxi en espera (parado)
 
@@ -261,6 +267,7 @@ class ECCentral:
         self.load_map_config()
         self.load_taxis()
         logger.info("EC_Central is running...")
+        #No comprobado que varios taxis se conecten
         kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
         kafka_thread.start()
 
@@ -275,7 +282,7 @@ class ECCentral:
                 conn, addr = self.server_socket.accept()
                 # Crear un hilo para manejar la autenticación del taxi
                 threading.Thread(target=self.handle_taxi_auth, args=(conn, addr), daemon=True).start()
-        except KeyboardInterrupt:
+        except KeyboardInterrupt:                       ###Crear menu, comprobar terminal
             logger.info("Shutting down EC_Central...")
         finally:
             if self.producer:

@@ -89,4 +89,4 @@ services:
       - CUSTOMER_ID=1
       - SERVICES_FILE=/data/services.txt
     command: >
-      python ec_customer.py kafka:9092 1 /data/services.txt
+      python ec_customer.py kafka:9092 1 /data/services.txt 12,10

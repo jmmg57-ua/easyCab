@@ -93,12 +93,13 @@ class Customer:
             self.logger.warning("No services found in the file. Exiting.")
             return
 
+#CAMBIAR comprobar asignacion y que termina el servicio
         for service in services:
             self.request_service(service)
             confirmation = self.wait_for_confirmation()
 
             if confirmation:
-                self.logger.info(f"Service to {service} completed successfully.")
+                self.logger.info(f"Service to {service} asigned successfully.")
             else:
                 self.logger.warning(f"Service to {service} was rejected.")
 
@@ -114,6 +115,7 @@ if __name__ == "__main__":
     kafka_broker = sys.argv[1]
     customer_id = sys.argv[2]
     services_file = sys.argv[3]
+    location = sys.argv[4]
 
     customer = Customer(kafka_broker, customer_id, services_file)
     customer.run()

@@ -28,7 +28,7 @@ class DigitalEngine:
         self.central_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.central_socket.connect((self.ec_central_ip, self.ec_central_port))
         
-        # Set up Kafka producer and consumer
+        # Set up Kafka producer and consumer                        COMRPOBAR QUE SE CONECTA A KAFKA
         self.producer = KafkaProducer(bootstrap_servers=[self.kafka_broker],
                                       value_serializer=lambda v: json.dumps(v).encode('utf-8'))
         self.consumer = KafkaConsumer('taxi_instructions',
@@ -89,7 +89,7 @@ class DigitalEngine:
             time.sleep(1)  # Wait for 1 second between movements
         
         if self.position == self.destination:
-            self.color = "IDLE"
+            self.color = "RED"
             self.send_position_update()
 
     def send_position_update(self):
