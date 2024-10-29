@@ -117,7 +117,7 @@ class Customer:
         self.logger.info("All services requested. Exiting.")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
+    if len(sys.argv) != 5:
         print("Usage: python EC_Customer.py <Kafka_Broker> <Customer_ID> <Services_File>")
         sys.exit(1)
 

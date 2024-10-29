@@ -1,4 +1,5 @@
 import os
+import pygame
 import logging
 import socket
 import sys
@@ -37,7 +38,14 @@ class ECCentral:
         self.map = np.full(self.map_size, ' ', dtype=str)
         self.locations: Dict[str, Location] = {}
         self.taxis_file = '/data/taxis.txt'  # Ruta al fichero de taxis
+        self.taxis = {}  # Guardar taxis en un atributo
+
         
+        # Inicializar Pygame
+        pygame.init()
+        self.screen = pygame.display.set_mode((800, 600))
+        pygame.display.set_caption("Central Taxi Map")
+  
     def load_map_config(self):
         try:
             with open('/data/map_config.txt', 'r') as f:
@@ -135,11 +143,35 @@ class ECCentral:
         self.broadcast_map(taxis)
 
     def display_map(self):
-        """Función para mostrar el mapa por consola"""
-        print("\nMapa actualizado:")
-        for row in self.map:
-            print (' '.join(row))
-        print("\n")
+        """Función para mostrar el mapa usando Pygame"""
+        self.screen.fill((255, 255, 255))  # Limpiar la pantalla
+
+        # Dibujar ubicaciones
+        for loc in self.locations.values():
+            x, y = loc.position
+            pygame.draw.rect(self.screen, (0, 0, 255), (x * 30, y * 30, 30, 30))  # Dibujar localización en azul
+
+        # Dibujar taxis
+        for taxi in self.taxis.values():
+            x, y = taxi.position
+            color = (0, 255, 0) if taxi.status == 'BUSY' else (255, 0, 0)  # Verde si está en movimiento, rojo si está parado
+            pygame.draw.circle(self.screen, color, (x * 30 + 15, y * 30 + 15), 15)  # Dibuja taxis
+
+        pygame.display.flip()  # Actualizar la pantalla
+
+    def run_map_display(self):
+        """Hilo para mostrar el mapa en Pygame"""
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+            # Actualizar el mapa cada segundo
+            self.display_map()
+            pygame.time.delay(1000)  # Esperar 1 segundo
+
+        pygame.quit()
     
 #INSPECCIONAR
     def broadcast_map(self, taxis):
@@ -278,6 +310,11 @@ class ECCentral:
         self.load_map_config()
         self.load_taxis()
         logger.info("EC_Central is running...")
+        
+        # Iniciar el hilo para la visualización del mapa
+        map_display_thread = threading.Thread(target=self.run_map_display, daemon=True)
+        map_display_thread.start()
+    
         #No comprobado que varios taxis se conecten
         kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
         kafka_thread.start()
