@@ -117,5 +117,5 @@ if __name__ == "__main__":
     services_file = sys.argv[3]
     location = sys.argv[4]
 
-    customer = Customer(kafka_broker, customer_id, services_file)
+    customer = Customer(kafka_broker, customer_id, services_file, location)
     customer.run()

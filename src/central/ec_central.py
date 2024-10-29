@@ -128,8 +128,18 @@ class ECCentral:
             self.map[y, x] = str(taxi.id)
         
         #MOSTRAR POR CONSOLA O PANTALLA
+        self.display_map()    
+            
+            
         self.broadcast_map(taxis)
 
+    def display_map(self):
+        """Función para mostrar el mapa por consola"""
+        print("\nMapa actualizado:")
+        for row in self.map:
+            print (' '.join(row))
+        print("\n")
+    
 #INSPECCIONAR
     def broadcast_map(self, taxis):
         if self.producer:
@@ -141,6 +151,7 @@ class ECCentral:
                     'locations': {k: {'position': v.position} 
                                  for k, v in self.locations.items()}
                 }
+                logger.info(f"Broadcasting map data: {json.dumps(map_data, indent=2)}")
                 self.producer.send('map_updates', map_data)
             except Exception as e:
                 logger.error(f"Error broadcasting map: {e}")
@@ -166,7 +177,11 @@ class ECCentral:
     def process_customer_request(self, request):
         customer_id = request['customer_id']
         destination = request['destination']
+        customer_location = request.get('location') #Esto sería si location estuviera en la request, habría que implementarlo en customer
         #LOCATION GUARDAR TAMBIEN
+        
+        if customer_location:
+            self.locations[f'customer_{customer_id}'] = Location(f'customer_{customer_id}', customer_location)
         
         if destination not in self.locations:
             logger.error(f"Invalid destination: {destination}")
@@ -177,8 +192,6 @@ class ECCentral:
 
         # Selección del taxi: elige el primer taxi que esté libre ('FREE')
         available_taxi = next((taxi for taxi in taxis.values() if taxi.status == 'FREE'), None)
-        
-        
         
         if available_taxi:
             available_taxi.status = 'BUSY'  # Ahora está ocupado
@@ -230,18 +243,15 @@ class ECCentral:
 
         #NO SABEMOS SI PODEMOS CREAR TAXIS SI NO HAY AUN
         if taxi_id not in taxis:
-            taxis[taxi_id] = Taxi(id=taxi_id, status='FREE', color='RED', position=(1, 1))  # Taxi en espera (parado)
+            logger.error(f"Taxi {taxi_id} not recognized. Ignoring update.")
+            return
 
         taxi = taxis[taxi_id]
         if 'position' in update:
             taxi.position = tuple(update['position'])
         if 'status' in update:
             taxi.status = update['status']
-            # Cambiar color según el estado: si está en movimiento, será 'GREEN', si está parado, 'RED'
-            if taxi.status == 'FREE':  # Taxi está libre, parado
-                taxi.color = 'RED'
-            elif taxi.status == 'BUSY':  # Taxi ocupado, en movimiento
-                taxi.color = 'GREEN'
+            taxi.color = 'GREEN'  if taxi.status == 'BUSY' else 'RED'
         
         # Guardar los cambios en el fichero
         self.save_taxis(taxis)
