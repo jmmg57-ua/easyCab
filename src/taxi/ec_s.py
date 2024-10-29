@@ -18,6 +18,7 @@ class Sensors:
 
     def connect_to_digital_engine(self):
         try:
+            logger.info(f"Attempting to connect to Digital Engine at {self.ec_de_ip}:{self.ec_de_port}")
             self.socket.connect((self.ec_de_ip, self.ec_de_port))
             logger.info(f"Connected to Digital Engine at {self.ec_de_ip}:{self.ec_de_port}")
             return True
@@ -28,6 +29,7 @@ class Sensors:
     def send_status(self):
         while True:
             try:
+                logger.info(f"Sending status: {self.status}")
                 self.socket.send(self.status.encode())
                 time.sleep(1)  # Send status every second
             except Exception as e:

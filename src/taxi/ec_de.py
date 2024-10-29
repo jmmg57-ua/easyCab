@@ -37,7 +37,7 @@ class DigitalEngine:
         
         # Set up socket for EC_S
         self.sensor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sensor_socket.bind((self.ec_s_ip, self.ec_s_port))
+        self.sensor_socket.bind(('0.0.0.0', self.ec_s_port))
         self.sensor_socket.listen(1)
         
         logger.info(f"Digital Engine for Taxi {self.taxi_id} initialized")
@@ -54,6 +54,7 @@ class DigitalEngine:
             return False
 
     def listen_for_instructions(self):
+        logger.info("Listening for instructions from Kafka topic 'taxi_instructions'...")
         for message in self.consumer:
             instruction = message.value
             if instruction['taxi_id'] == self.taxi_id:
@@ -101,8 +102,7 @@ class DigitalEngine:
         }
         self.producer.send('taxi_updates', update)
 
-    def listen_for_sensor_data(self):
-        conn, addr = self.sensor_socket.accept()
+    def listen_for_sensor_data(self, conn, addr):
         logger.info(f"Connected to Sensors at {addr}")
         while True:
             data = conn.recv(1024).decode()
@@ -114,14 +114,21 @@ class DigitalEngine:
                 self.send_position_update()
 
     def run(self):
+        logger.info("Waiting for sensor connection...")
+        conn, addr = self.sensor_socket.accept()
+        
+        threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
+        
         if not self.authenticate():
             return
         
-        threading.Thread(target=self.listen_for_instructions, daemon=True).start()
-        threading.Thread(target=self.listen_for_sensor_data, daemon=True).start()
+        logger.info("Digital Engine is running...")
+        kafka_thread = threading.Thread(target=self.listen_for_instructions, daemon=True)
+        kafka_thread.start()
         
+        # Mantener el hilo principal activo
         while True:
-            time.sleep(1)  # Keep the main thread alive
+            time.sleep(1)
 
 if __name__ == "__main__":
 
