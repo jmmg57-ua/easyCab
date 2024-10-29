@@ -178,7 +178,7 @@ class ECCentral:
     def process_customer_request(self, request):
         customer_id = request['customer_id']
         destination = request['destination']
-        customer_location = request('customer_location')
+        customer_location = request['customer_location']
         
         if customer_location:
             self.locations[f'customer_{customer_id}'] = Location(f'customer_{customer_id}', customer_location, 'YELLOW')
