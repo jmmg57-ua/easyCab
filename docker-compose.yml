@@ -63,7 +63,7 @@ services:
       - central
     #Cambiar en command kafka por la ip y port del host de kafka
     command: >
-      python ec_de.py central 8000 kafka:9092 localhost 9001 1
+      python ec_de.py central 8000 kafka:9092 sensor 9001 1
 
 
   sensor:
@@ -73,7 +73,7 @@ services:
     depends_on:
       - dengine
     command: >
-      python ec_s.py localhost 9001
+      python ec_s.py dengine 9001
 
 
   customer:
