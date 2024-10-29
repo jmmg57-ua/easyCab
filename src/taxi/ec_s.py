@@ -3,6 +3,8 @@ import sys
 import time
 import threading
 import logging
+import tkinter as tk
+
 
 # Configurar el logger
 logging.basicConfig(level=logging.INFO,
@@ -15,10 +17,29 @@ class Sensors:
         self.ec_de_port = ec_de_port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.status = "OK"
+        self.root = tk.Tk()
+        self.root.title("Sensor Control")
+        self.label = tk.Label(self.root, text="Sensor Status")
+        self.label.pack()
+        self.status_label = tk.Label(self.root, text="Status: OK", fg="green")
+        self.status_label.pack()
+        self.button_ko = tk.Button(self.root, text="Simulate Incident", command=self.set_ko)
+        self.button_ko.pack()
+        self.button_ok = tk.Button(self.root, text="Resolve Incident", command=self.set_ok)
+        self.button_ok.pack()
+        
+    def set_ko(self):
+        self.status = "KO"
+        self.status_label.config(text="Status: KO", fg="red")
+        logger.info("Incident simulated. Status set to KO")
+
+    def set_ok(self):
+        self.status = "OK"
+        self.status_label.config(text="Status: OK", fg="green")
+        logger.info("Incident resolved. Status set to OK")
 
     def connect_to_digital_engine(self):
         try:
-            logger.info(f"Attempting to connect to Digital Engine at {self.ec_de_ip}:{self.ec_de_port}")
             self.socket.connect((self.ec_de_ip, self.ec_de_port))
             logger.info(f"Connected to Digital Engine at {self.ec_de_ip}:{self.ec_de_port}")
             return True
@@ -31,29 +52,16 @@ class Sensors:
             try:
                 logger.info(f"Sending status: {self.status}")
                 self.socket.send(self.status.encode())
-                time.sleep(1)  # Send status every second
+                time.sleep(1)
             except Exception as e:
                 logger.error(f"Error sending status: {e}")
                 break
-#COMO MANEJAR LOS IMPUTS
-    def listen_for_user_input(self):
-        logger.info("Press 'i' to simulate an incident, 'r' to resolve the incident")
-        while True:
-            user_input = input().lower()
-            if user_input == 'i':
-                self.status = "KO"
-                logger.info("Incident simulated. Status set to KO")
-            elif user_input == 'r':
-                self.status = "OK"
-                logger.info("Incident resolved. Status set to OK")
-
+            
     def run(self):
         if not self.connect_to_digital_engine():
             return
-#POR QUE THREAD AQUI?
         threading.Thread(target=self.send_status, daemon=True).start()
-        ##TIENE QUE MANDAR UN MENSAJE CADA SEGUNDO
-        self.listen_for_user_input()
+        self.root.mainloop()
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
