@@ -33,7 +33,7 @@ class Sensors:
             except Exception as e:
                 logger.error(f"Error sending status: {e}")
                 break
-
+#COMO MANEJAR LOS IMPUTS
     def listen_for_user_input(self):
         logger.info("Press 'i' to simulate an incident, 'r' to resolve the incident")
         while True:
@@ -48,8 +48,9 @@ class Sensors:
     def run(self):
         if not self.connect_to_digital_engine():
             return
-
+#POR QUE THREAD AQUI?
         threading.Thread(target=self.send_status, daemon=True).start()
+        ##TIENE QUE MANDAR UN MENSAJE CADA SEGUNDO
         self.listen_for_user_input()
 
 if __name__ == "__main__":
