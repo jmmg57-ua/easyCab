@@ -6,12 +6,13 @@ from kafka import KafkaProducer, KafkaConsumer
 from kafka.errors import KafkaError
 
 class Customer:
-    def __init__(self, kafka_broker, customer_id, services_file):
+    def __init__(self, kafka_broker, customer_id, services_file, customer_location):
         self.kafka_broker = kafka_broker
         self.customer_id = customer_id
         self.services_file = services_file
         self.producer = None
         self.consumer = None
+        self.customer_location = tuple(map(int, customer_location.split(',')))
         
         # Set up logging
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - Customer %(message)s')
@@ -58,10 +59,11 @@ class Customer:
             self.logger.error(f"Error reading services file: {e}")
             return []
 
-    def request_service(self, destination):
+    def request_service(self, destination, customer_location):
         request = {
             'customer_id': self.customer_id,
             'destination': destination,
+            'customer_location': self.customer_location,        #Añadida la localización del cliente al mensaje del request
             'timestamp': time.time()
         }
         try:
@@ -93,18 +95,25 @@ class Customer:
             self.logger.warning("No services found in the file. Exiting.")
             return
 
-#CAMBIAR comprobar asignacion y que termina el servicio
+#CAMBIAR comprobar asignacion y que termina el servicio (done)
         for service in services:
             self.request_service(service)
             confirmation = self.wait_for_confirmation()
 
             if confirmation:
                 self.logger.info(f"Service to {service} asigned successfully.")
+                
+                confirmation = self.wait_for_confirmation()
+                if confirmation:
+                    self.logger.info(f"Service to {service} completed")
+                    self.logger.info(f"Wait 4 seconds before requesting the next service")
+                    time.sleep(4)
+                else:
+                    self.logger.warning(f"Service to {service} haven't been completed.")
+
             else:
                 self.logger.warning(f"Service to {service} was rejected.")
-
-            time.sleep(4)  # Wait 4 seconds before requesting the next service
-
+                
         self.logger.info("All services requested. Exiting.")
 
 if __name__ == "__main__":
@@ -115,7 +124,7 @@ if __name__ == "__main__":
     kafka_broker = sys.argv[1]
     customer_id = sys.argv[2]
     services_file = sys.argv[3]
-    location = sys.argv[4]
+    customer_location = sys.argv[4]
 
-    customer = Customer(kafka_broker, customer_id, services_file, location)
+    customer = Customer(kafka_broker, customer_id, services_file, customer_location)
     customer.run()

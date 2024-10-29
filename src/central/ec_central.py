@@ -25,6 +25,7 @@ class Taxi:
 class Location:
     id: str
     position: Tuple[int, int]
+    color: str # 'BLUE' (localización) o 'YELLOW' (cliente)
 
 class ECCentral:
     def __init__(self, kafka_bootstrap_servers, listen_port):
@@ -177,11 +178,10 @@ class ECCentral:
     def process_customer_request(self, request):
         customer_id = request['customer_id']
         destination = request['destination']
-        customer_location = request.get('location') #Esto sería si location estuviera en la request, habría que implementarlo en customer
-        #LOCATION GUARDAR TAMBIEN
+        customer_location = request('customer_location')
         
         if customer_location:
-            self.locations[f'customer_{customer_id}'] = Location(f'customer_{customer_id}', customer_location)
+            self.locations[f'customer_{customer_id}'] = Location(f'customer_{customer_id}', customer_location, 'YELLOW')
         
         if destination not in self.locations:
             logger.error(f"Invalid destination: {destination}")
@@ -206,7 +206,8 @@ class ECCentral:
                 'taxi_id': available_taxi.id,
                 'instruction': 'MOVE',
                 'customer_id': customer_id,
-                'destination': self.locations[destination].position     #PRIMERO TIENE QUE IR A LA UBI, DESPUES A LA LOCATION
+                'pickup': self.locations[customer_location].position,
+                'destination': self.locations[destination].position     #PRIMERO TIENE QUE IR A LA UBI, DESPUES A LA LOCATION (done)
             })
             logger.info(f"Assigned taxi {available_taxi.id} to customer {customer_id}")
             
