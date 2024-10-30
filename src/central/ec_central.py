@@ -42,10 +42,6 @@ class ECCentral:
         self.locations = {}
         self.map_changed = False  # Estado para detectar cambios en el mapa
 
-        
-        self.kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
-        self.kafka_thread.start()
-
     def load_map_config(self):
         try:
             with open('/data/map_config.txt', 'r') as f:
@@ -229,7 +225,8 @@ class ECCentral:
         try:
             self.producer = KafkaProducer(
                 bootstrap_servers=self.kafka_bootstrap_servers,
-                value_serializer=lambda v: json.dumps(v).encode('utf-8')
+                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                max_block_ms=5000  # Establecer timeout de 5 segundos para enviar mensajes
             )
             self.consumer = KafkaConsumer(
                 'customer_requests', 'taxi_updates',
@@ -349,6 +346,7 @@ class ECCentral:
         """Envía el estado del mapa solo cuando ha habido cambios."""
         while True:
             if self.map_changed:
+
                 self.broadcast_map()
                 self.map_changed = False  # Restablecer el indicador después de transmitir
             time.sleep(1)  # Espera 1 segundo antes de verificar nuevamente
@@ -371,6 +369,18 @@ class ECCentral:
         finally:
             if self.server_socket:
                 self.server_socket.close()
+                
+    def close_producer(self):
+        """Cierra el productor de Kafka con timeout."""
+        if self.producer:
+            try:
+                # Forzar el cierre del productor con un timeout
+                self.producer.close(timeout=5.0)  # 5 segundos para cerrar
+                logger.info("Kafka producer closed successfully.")
+            except KafkaError as e:
+                logger.error(f"Error closing Kafka producer: {e}")
+            except Exception as e:
+                logger.error(f"General error while closing Kafka producer: {e}")
 
 
     def run(self):
@@ -395,6 +405,18 @@ class ECCentral:
         # Iniciar el hilo para la visualización del mapa
         map_broadcast_thread = threading.Thread(target=self.auto_broadcast_map, daemon=True)
         map_broadcast_thread.start()
+        
+        try:
+            # Código de ejecución principal
+            while True:
+                time.sleep(1)  # Simular trabajo
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+        finally:
+            self.close_producer()  # Asegúrate de cerrar el productor al finalizar
+            if self.consumer:
+                self.consumer.close()
+                logger.info("Kafka consumer closed.")
 
 
             

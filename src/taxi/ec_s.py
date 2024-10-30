@@ -4,7 +4,6 @@ import time
 import threading
 import random
 import logging
-import tkinter as tk
 
 
 # Configurar el logger
@@ -42,11 +41,11 @@ class Sensors:
     def random_incident_simulation(self):
         while self.running:
             # Cambiar el estado a "KO" aleatoriamente
-            if random.random() < 0.1:  # 10% de probabilidad de incidentes
-                self.status = "KO"
-                logger.info("Random incident simulated. Status set to KO")
-            else:
-                self.status = "OK"  # Restaurar a OK
+            # if random.random() < 0:  # 10% de probabilidad de incidentes
+            #     self.status = "KO"
+            #     logger.info("Random incident simulated. Status set to KO")
+            # else:
+            self.status = "OK"  # Restaurar a OK
             time.sleep(3)  # Esperar 3 segundos antes de comprobar nuevamente
 
     def run(self):

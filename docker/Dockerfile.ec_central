@@ -4,9 +4,11 @@ FROM python:3.9-slim
 # Crear un directorio de trabajo
 WORKDIR /app
 
-# Copiar todos los archivos al contenedor
-COPY ./src/central /app
+# Copiar solo el archivo de requisitos primero
+COPY requirements.txt ./
 
 # Instalar dependencias
-COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar el resto de los archivos después de instalar dependencias
+COPY ./src/central ./

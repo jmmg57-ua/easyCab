@@ -4,6 +4,13 @@ FROM python:3.9-slim
 # Establecer el directorio de trabajo
 WORKDIR /app
 
+
+# Copiar los archivos necesarios para el Digital Engine
+COPY requirements.txt .
+
+# Instalar las dependencias necesarias (Kafka, sockets, etc.)
+RUN pip install --no-cache-dir -r requirements.txt
+
 # Copiar los archivos necesarios para el Sensor
 COPY ./src/taxi/ec_s.py /app
 
