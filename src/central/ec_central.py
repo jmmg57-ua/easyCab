@@ -50,8 +50,9 @@ class ECCentral:
                 for line in f:
                     loc_id, x, y = line.strip().split()
                     x, y = int(x), int(y)
-                    self.locations[loc_id] = Location(loc_id, (x, y))
+                    self.locations[loc_id] = Location(loc_id, (x, y),"BLUE")
                     self.map[y, x] = loc_id
+                    
             logger.info("Map configuration loaded successfully")
         except Exception as e:
             logger.error(f"Error loading map configuration: {e}")
@@ -157,9 +158,13 @@ class ECCentral:
    
 
     def draw_map(self):
-        """Dibuja el mapa en los logs."""
-        logger.info("Current Map State:")
-        map_lines = []
+        """Dibuja el mapa en los logs con delimitación de bordes."""
+        logger.info("Current Map State with Borders:")
+        map_lines = [""]  # Agrega una línea vacía al inicio
+
+        # Crear el borde superior
+        border_row = "#" * (self.map_size[1] + 2)
+        map_lines.append(border_row)
 
         # Limpiar el mapa primero
         self.map.fill(' ')
@@ -172,14 +177,18 @@ class ECCentral:
         # Colocar los taxis en el mapa
         for taxi in self.taxis.values():
             x, y = taxi.position
-            self.map[y, x] = taxi.id  # Usar el ID del taxi
+            self.map[y, x] = str(taxi.id)  # Usar el ID del taxi como representación
 
-        # Crear una representación en líneas
+        # Crear cada fila con delimitadores laterales
         for row in self.map:
-            map_lines.append("".join(row))
+            map_lines.append("#" + "".join(row) + "#")
+
+        # Agregar el borde inferior
+        map_lines.append(border_row)
         
         # Unir las líneas y registrarlas
         logger.info("\n".join(map_lines))
+
 
     def broadcast_map(self):
         """
