@@ -1,5 +1,4 @@
-import os
-import pygame
+import time
 import logging
 import socket
 import sys
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Taxi:
     id: int
-    status: str  # 'FREE', 'BUSY'
+    status: str  # 'FREE', 'BUSY', 'END'
     color: str  # 'RED' (parado) o 'GREEN' (en movimiento)
     position: Tuple[int, int]
 
@@ -39,13 +38,11 @@ class ECCentral:
         self.locations: Dict[str, Location] = {}
         self.taxis_file = '/data/taxis.txt'  # Ruta al fichero de taxis
         self.taxis = {}  # Guardar taxis en un atributo
-
+        self.locations = {}
         
-        # Inicializar Pygame
-        pygame.init()
-        self.screen = pygame.display.set_mode((800, 600))
-        pygame.display.set_caption("Central Taxi Map")
-  
+        self.kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
+        self.kafka_thread.start()
+
     def load_map_config(self):
         try:
             with open('/data/map_config.txt', 'r') as f:
@@ -121,72 +118,43 @@ class ECCentral:
         finally:
             conn.close()
     
-    def update_map(self, taxis):
-        #COMPROBAR SI LO HACE
-        # Reset map except for locations
-        self.map = np.full(self.map_size, ' ', dtype=str)
-        
-        # Add locations
-        for loc in self.locations.values():
-            x, y = loc.position
-            self.map[y, x] = loc.id
+    def update_map(self, update):
+            """
+            Actualiza el estado del mapa según las actualizaciones de posición de los taxis.
+            """
+            taxi_id = update['taxi_id']
+            pos_x, pos_y = update['position']
+            status = update['status']
+
+            # Si el taxi existe, actualizamos sus datos; si no, lo creamos
+            if taxi_id in self.taxis:
+                taxi = self.taxis[taxi_id]
+                taxi.position = (pos_x, pos_y)
+                taxi.status = status
+                taxi.color = 'GREEN' if status == 'BUSY' else 'RED'
+            else:
+                logger.warning(f'There is no taxi with the id = {taxi_id}')
             
-        # Add taxis
-        for taxi in taxis.values():
-            x, y = taxi.position
-            self.map[y, x] = str(taxi.id)
-        
-        #MOSTRAR POR CONSOLA O PANTALLA
-        self.display_map()    
-            
-            
-        self.broadcast_map(taxis)
+            # Redibuja el mapa en la interfaz y emite una transmisión con el mapa actualizado
+            self.draw_map()
+            self.broadcast_map()
 
-    def display_map(self):
-        """Función para mostrar el mapa usando Pygame"""
-        self.screen.fill((255, 255, 255))  # Limpiar la pantalla
-
-        # Dibujar ubicaciones
-        for loc in self.locations.values():
-            x, y = loc.position
-            pygame.draw.rect(self.screen, (0, 0, 255), (x * 30, y * 30, 30, 30))  # Dibujar localización en azul
-
-        # Dibujar taxis
-        for taxi in self.taxis.values():
-            x, y = taxi.position
-            color = (0, 255, 0) if taxi.status == 'BUSY' else (255, 0, 0)  # Verde si está en movimiento, rojo si está parado
-            pygame.draw.circle(self.screen, color, (x * 30 + 15, y * 30 + 15), 15)  # Dibuja taxis
-
-        pygame.display.flip()  # Actualizar la pantalla
-
-    def run_map_display(self):
-        """Hilo para mostrar el mapa en Pygame"""
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-
-            # Actualizar el mapa cada segundo
-            self.display_map()
-            pygame.time.delay(1000)  # Esperar 1 segundo
-
-        pygame.quit()
-    
-#INSPECCIONAR
-    def broadcast_map(self, taxis):
+    def broadcast_map(self):
+        """
+        Envía el estado actual del mapa a todos los taxis a través del tópico 'map_updates'.
+        """
         if self.producer:
             try:
                 map_data = {
                     'map': self.map.tolist(),
                     'taxis': {k: {'position': v.position, 'status': v.status, 'color': v.color} 
-                             for k, v in taxis.items()},
-                    'locations': {k: {'position': v.position} 
-                                 for k, v in self.locations.items()}
+                                for k, v in self.taxis.items()},
+                    'locations': {k: {'position': v.position, 'color': v.color}
+                                    for k, v in self.locations.items()}
                 }
-                logger.info(f"Broadcasting map data: {json.dumps(map_data, indent=2)}")
                 self.producer.send('map_updates', map_data)
-            except Exception as e:
+                logger.info("Broadcasted map to all taxis")
+            except KafkaError as e:
                 logger.error(f"Error broadcasting map: {e}")
 
     def connect_kafka(self):
@@ -301,25 +269,16 @@ class ECCentral:
             if topic == 'customer_requests':
                 self.process_customer_request(data)
             elif topic == 'taxi_updates':
-                self.process_taxi_update(data)
+                self.update_map(data)
 
-    def run(self):
-        if not self.connect_kafka():
-            return
+    def auto_broadcast_map(self):
 
-        self.load_map_config()
-        self.load_taxis()
-        logger.info("EC_Central is running...")
-        
-        # Iniciar el hilo para la visualización del mapa
-        map_display_thread = threading.Thread(target=self.run_map_display, daemon=True)
-        map_display_thread.start()
-    
-        #No comprobado que varios taxis se conecten
-        kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
-        kafka_thread.start()
+        while True:
+            self.broadcast_map()
+            time.sleep(1)  # Espera 1 segundo antes de volver a enviar
 
-        # Configurar el servidor de sockets
+    def start_server_socket(self):
+        """Configura el servidor de sockets y maneja la autenticación de taxis en un hilo separado."""
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind(('0.0.0.0', self.listen_port))
         self.server_socket.listen(5)  # Permitir hasta 5 conexiones en espera
@@ -330,15 +289,35 @@ class ECCentral:
                 conn, addr = self.server_socket.accept()
                 # Crear un hilo para manejar la autenticación del taxi
                 threading.Thread(target=self.handle_taxi_auth, args=(conn, addr), daemon=True).start()
-        except KeyboardInterrupt:                       ###Crear menu, comprobar terminal
-            logger.info("Shutting down EC_Central...")
+        except Exception as e:
+            logger.error(f"Error in start_server_socket: {e}")
         finally:
-            if self.producer:
-                self.producer.close()
-            if self.consumer:
-                self.consumer.close()
             if self.server_socket:
                 self.server_socket.close()
+
+
+    def run(self):
+        if not self.connect_kafka():
+            return
+
+        self.load_map_config()
+        self.load_taxis()
+        logger.info("EC_Central is running...")
+        
+        self.draw_map()  # Dibujar el mapa inicial
+
+        # Iniciar el hilo para la visualización del mapa
+        map_broadcast_thread = threading.Thread(target=self.auto_broadcast_map, daemon=True)
+        map_broadcast_thread.start()
+
+        # Iniciar el hilo para escuchar mensajes Kafka
+        kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
+        kafka_thread.start()
+
+        # Iniciar el servidor de autenticación de taxis en un hilo separado
+        auth_thread = threading.Thread(target=self.start_server_socket, daemon=True)
+        auth_thread.start()
+
             
 if __name__ == "__main__":
     if len(sys.argv) < 3:
