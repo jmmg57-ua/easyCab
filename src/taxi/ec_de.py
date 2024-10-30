@@ -24,7 +24,6 @@ class DigitalEngine:
         self.position = [1, 1]  # Initial position
         self.pickup = None
         self.destination = None
-        self.customer_asigned = None
         
         # Connect to EC_Central
         self.central_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -67,7 +66,6 @@ class DigitalEngine:
             self.pickup = instruction['pickup']
             self.destination = instruction['destination']
             self.color = "GREEN"
-            self.customer_asigned = instruction['customer_id']
             self.move_to_destination()
         elif instruction['type'] == 'STOP':
             self.color = "RED"

@@ -20,6 +20,7 @@ class Taxi:
     status: str  # 'FREE', 'BUSY', 'END'
     color: str  # 'RED' (parado) o 'GREEN' (en movimiento)
     position: Tuple[int, int]
+    customer_asigned: int
 
 @dataclass
 class Location:
@@ -61,12 +62,13 @@ class ECCentral:
         try:
             with open(self.taxis_file, 'r') as f:
                 for line in f:
-                    taxi_id, status, color, pos_x, pos_y = line.strip().split('#')
+                    taxi_id, status, color, pos_x, pos_y, customer_asigned = line.strip().split('#')
                     taxis[int(taxi_id)] = Taxi(
                         id=int(taxi_id),
                         position=(int(pos_x), int(pos_y)),
                         status=status,
-                        color=color
+                        color=color,
+                        customer_asigned=customer_asigned
                     )
             logger.info("Taxis loaded from file")
         except Exception as e:
@@ -78,7 +80,7 @@ class ECCentral:
         try:
             with open(self.taxis_file, 'w') as f:
                 for taxi in taxis.values():
-                    f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}\n")
+                    f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}#{taxi.customer_asigned}\n")
             logger.info("Taxis saved to file")
             self.validate_taxis_file()
         except Exception as e:
@@ -118,6 +120,15 @@ class ECCentral:
         finally:
             conn.close()
     
+    def notify_customer(self, taxi):                
+        self.producer.send('taxi_response', {
+                'customer_id': taxi.customer_asigned,
+                'status': "OK",
+                'assigned_taxi': taxi.id
+            })
+        logger.info(f"Completed trip from taxi {taxi.id} for customer {taxi.customer_asigned}")
+         
+    
     def update_map(self, update):
             """
             Actualiza el estado del mapa según las actualizaciones de posición de los taxis.
@@ -125,19 +136,50 @@ class ECCentral:
             taxi_id = update['taxi_id']
             pos_x, pos_y = update['position']
             status = update['status']
+            color = update['color']
+            customer_asigned = update['customer_id']
 
             # Si el taxi existe, actualizamos sus datos; si no, lo creamos
             if taxi_id in self.taxis:
                 taxi = self.taxis[taxi_id]
                 taxi.position = (pos_x, pos_y)
                 taxi.status = status
-                taxi.color = 'GREEN' if status == 'BUSY' else 'RED'
+                taxi.customer_asigned = customer_asigned
+                if taxi.status == "END":
+                    self.notify_customer(taxi)
+                taxi.color = color
             else:
                 logger.warning(f'There is no taxi with the id = {taxi_id}')
             
             # Redibuja el mapa en la interfaz y emite una transmisión con el mapa actualizado
             self.draw_map()
             self.broadcast_map()
+   
+
+    def draw_map(self):
+        """Dibuja el mapa en los logs."""
+        logger.info("Current Map State:")
+        map_lines = []
+
+        # Limpiar el mapa primero
+        self.map.fill(' ')
+
+        # Colocar las ubicaciones en el mapa
+        for location in self.locations.values():
+            x, y = location.position
+            self.map[y, x] = location.id
+
+        # Colocar los taxis en el mapa
+        for taxi in self.taxis.values():
+            x, y = taxi.position
+            self.map[y, x] = taxi.id  # Usar el ID del taxi
+
+        # Crear una representación en líneas
+        for row in self.map:
+            map_lines.append("".join(row))
+        
+        # Unir las líneas y registrarlas
+        logger.info("\n".join(map_lines))
 
     def broadcast_map(self):
         """
@@ -205,7 +247,6 @@ class ECCentral:
             self.producer.send('taxi_instructions', {
                 'taxi_id': available_taxi.id,
                 'instruction': 'MOVE',
-                'customer_id': customer_id,
                 'pickup': self.locations[customer_location].position,
                 'destination': self.locations[destination].position     #PRIMERO TIENE QUE IR A LA UBI, DESPUES A LA LOCATION (done)
             })
@@ -235,30 +276,6 @@ class ECCentral:
             }
             logger.warning("No available taxis")
             return False
-
-    def process_taxi_update(self, update):
-        taxi_id = update['taxi_id']
-
-        # Cargar taxis desde el fichero
-        taxis = self.load_taxis()
-
-        #NO SABEMOS SI PODEMOS CREAR TAXIS SI NO HAY AUN
-        if taxi_id not in taxis:
-            logger.error(f"Taxi {taxi_id} not recognized. Ignoring update.")
-            return
-
-        taxi = taxis[taxi_id]
-        if 'position' in update:
-            taxi.position = tuple(update['position'])
-        if 'status' in update:
-            taxi.status = update['status']
-            taxi.color = 'GREEN'  if taxi.status == 'BUSY' else 'RED'
-        
-        # Guardar los cambios en el fichero
-        self.save_taxis(taxis)
-
-        # Actualizar el mapa
-        self.update_map(taxis)
 
     def kafka_listener(self):
         """Hilo para escuchar los mensajes de Kafka."""
