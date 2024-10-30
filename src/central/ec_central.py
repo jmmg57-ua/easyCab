@@ -123,7 +123,7 @@ class ECCentral:
     def notify_customer(self, taxi):                
         self.producer.send('taxi_response', {
                 'customer_id': taxi.customer_asigned,
-                'status': "OK",
+                'status': "END",
                 'assigned_taxi': taxi.id
             })
         logger.info(f"Completed trip from taxi {taxi.id} for customer {taxi.customer_asigned}")
@@ -144,10 +144,10 @@ class ECCentral:
                 taxi = self.taxis[taxi_id]
                 taxi.position = (pos_x, pos_y)
                 taxi.status = status
+                taxi.color = color
                 taxi.customer_asigned = customer_asigned
                 if taxi.status == "END":
                     self.notify_customer(taxi)
-                taxi.color = color
             else:
                 logger.warning(f'There is no taxi with the id = {taxi_id}')
             
