@@ -59,12 +59,11 @@ class Customer:
             self.logger.error(f"Error reading services file: {e}")
             return []
 
-    def request_service(self, destination, customer_location):
+    def request_service(self, destination):
         request = {
             'customer_id': self.customer_id,
             'destination': destination,
             'customer_location': self.customer_location,        #Añadida la localización del cliente al mensaje del request
-            'timestamp': time.time()
         }
         try:
             self.producer.send('taxi_requests', request)
@@ -98,7 +97,6 @@ class Customer:
             self.logger.warning("No services found in the file. Exiting.")
             return
 
-#CAMBIAR comprobar asignacion y que termina el servicio (done)
         for service in services:
             self.request_service(service)
             confirmation = self.wait_for_confirmation()

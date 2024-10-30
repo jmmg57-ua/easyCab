@@ -24,6 +24,7 @@ class DigitalEngine:
         self.position = [1, 1]  # Initial position
         self.pickup = None
         self.destination = None
+        self.customer_asigned = None
         
         # Connect to EC_Central
         self.central_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -32,9 +33,15 @@ class DigitalEngine:
         # Set up Kafka producer and consumer
         self.producer = KafkaProducer(bootstrap_servers=[self.kafka_broker],
                                       value_serializer=lambda v: json.dumps(v).encode('utf-8'))
-        self.consumer = KafkaConsumer('taxi_instructions',
-                                      bootstrap_servers=[self.kafka_broker],
-                                      value_deserializer=lambda v: json.loads(v.decode('utf-8')))
+        # Consumidor para taxi_instructions
+        self.instruction_consumer = KafkaConsumer('taxi_instructions',
+                                                   bootstrap_servers=[self.kafka_broker],
+                                                   value_deserializer=lambda v: json.loads(v.decode('utf-8')))
+        
+        # Consumidor para updated_map
+        self.map_consumer = KafkaConsumer('updated_map',
+                                           bootstrap_servers=[self.kafka_broker],
+                                           value_deserializer=lambda v: json.loads(v.decode('utf-8')))
         
         # Set up socket for EC_S
         self.sensor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -66,6 +73,7 @@ class DigitalEngine:
             self.pickup = instruction['pickup']
             self.destination = instruction['destination']
             self.color = "GREEN"
+            self.customer_asigned = ['customer_id']
             self.move_to_destination()
         elif instruction['type'] == 'STOP':
             self.color = "RED"
@@ -117,9 +125,35 @@ class DigitalEngine:
             'taxi_id': self.taxi_id,
             'status': self.status,
             'color': self.color,
-            'position': self.position
+            'position': self.position,
+            'customer_id': self.customer_asigned
         }
         self.producer.send('taxi_updates', update)
+    
+    def listen_for_map_updates(self):
+        """Escucha actualizaciones de mapa desde el tópico 'map_updates'."""
+        consumer = KafkaConsumer(
+            'map_updates',
+            bootstrap_servers=[self.kafka_broker],
+            value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+            group_id=f'digital_engine_{self.taxi_id}'
+        )
+        logger.info("Listening for map updates on 'map_updates'...")
+
+        for message in consumer:
+            map_data = message.value
+            logger.info(f"Received map update: {map_data}")
+            self.process_map_update(map_data)  # Procesar y opcionalmente modificar el mapa
+
+    def process_map_update(self, map_data):
+        """Procesa el mapa recibido, realiza cambios si es necesario y lo envía de vuelta."""
+        # (Opcional) Realizar modificaciones en el mapa basado en la posición actual del taxi
+        map_data['map'][self.position[1]][self.position[0]] = str(self.taxi_id)  # Marca la posición actual del taxi
+
+        # Envía el mapa modificado de vuelta al 'EC_Central'
+        self.producer.send('updated_map', map_data)
+        logger.info("Sent updated map back to EC_Central.")
+        
 
     def listen_for_sensor_data(self, conn, addr):
         logger.info(f"Connected to Sensors at {addr}")
@@ -142,8 +176,13 @@ class DigitalEngine:
             return
         
         logger.info("Digital Engine is running...")
+        
         kafka_thread = threading.Thread(target=self.listen_for_instructions, daemon=True)
         kafka_thread.start()
+        
+        # Crear hilo para escuchar actualizaciones del mapa
+        map_update_thread = threading.Thread(target=self.listen_for_map_updates, daemon=True)
+        map_update_thread.start()
         
         # Mantener el hilo principal activo
         while True:

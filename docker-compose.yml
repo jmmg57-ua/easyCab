@@ -20,7 +20,7 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_CREATE_TOPICS: "customer_requests:1:1,taxi_responses:1:1,taxi_updates:1:1,taxi_instructions:1:1,map_updates:1:1"
+      KAFKA_CREATE_TOPICS: "customer_requests:1:1,taxi_responses:1:1,updated_map:1:1,taxi_instructions:1:1,map_updates:1:1"
     depends_on:
       zookeeper:
         condition: service_healthy
