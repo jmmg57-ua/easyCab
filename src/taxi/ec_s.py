@@ -2,6 +2,7 @@ import socket
 import sys
 import time
 import threading
+import random
 import logging
 import tkinter as tk
 
@@ -17,26 +18,7 @@ class Sensors:
         self.ec_de_port = ec_de_port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.status = "OK"
-        self.root = tk.Tk()
-        self.root.title("Sensor Control")
-        self.label = tk.Label(self.root, text="Sensor Status")
-        self.label.pack()
-        self.status_label = tk.Label(self.root, text="Status: OK", fg="green")
-        self.status_label.pack()
-        self.button_ko = tk.Button(self.root, text="Simulate Incident", command=self.set_ko)
-        self.button_ko.pack()
-        self.button_ok = tk.Button(self.root, text="Resolve Incident", command=self.set_ok)
-        self.button_ok.pack()
-        
-    def set_ko(self):
-        self.status = "KO"
-        self.status_label.config(text="Status: KO", fg="red")
-        logger.info("Incident simulated. Status set to KO")
-
-    def set_ok(self):
-        self.status = "OK"
-        self.status_label.config(text="Status: OK", fg="green")
-        logger.info("Incident resolved. Status set to OK")
+        self.running = True  # Para controlar el ciclo de los hilos
 
     def connect_to_digital_engine(self):
         try:
@@ -48,7 +30,7 @@ class Sensors:
             return False
 
     def send_status(self):
-        while True:
+        while self.running:
             try:
                 logger.info(f"Sending status: {self.status}")
                 self.socket.send(self.status.encode())
@@ -56,12 +38,32 @@ class Sensors:
             except Exception as e:
                 logger.error(f"Error sending status: {e}")
                 break
-            
+
+    def random_incident_simulation(self):
+        while self.running:
+            # Cambiar el estado a "KO" aleatoriamente
+            if random.random() < 0.1:  # 10% de probabilidad de incidentes
+                self.status = "KO"
+                logger.info("Random incident simulated. Status set to KO")
+            else:
+                self.status = "OK"  # Restaurar a OK
+            time.sleep(3)  # Esperar 3 segundos antes de comprobar nuevamente
+
     def run(self):
         if not self.connect_to_digital_engine():
             return
+
+        # Iniciar hilos para enviar estados y simular incidentes
         threading.Thread(target=self.send_status, daemon=True).start()
-        self.root.mainloop()
+        threading.Thread(target=self.random_incident_simulation, daemon=True).start()
+        
+        # Mantener el hilo principal en ejecución
+        try:
+            while self.running:
+                time.sleep(1)  # Esperar para no consumir CPU innecesariamente
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+            self.running = False  # Detener hilos al cerrar el programa
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:

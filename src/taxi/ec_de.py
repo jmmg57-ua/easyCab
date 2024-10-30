@@ -22,13 +22,14 @@ class DigitalEngine:
         self.status = "FREE"   
         self.color = "RED"     
         self.position = [1, 1]  # Initial position
+        self.pickup = None
         self.destination = None
         
         # Connect to EC_Central
         self.central_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.central_socket.connect((self.ec_central_ip, self.ec_central_port))
         
-        # Set up Kafka producer and consumer                        COMRPOBAR QUE SE CONECTA A KAFKA
+        # Set up Kafka producer and consumer
         self.producer = KafkaProducer(bootstrap_servers=[self.kafka_broker],
                                       value_serializer=lambda v: json.dumps(v).encode('utf-8'))
         self.consumer = KafkaConsumer('taxi_instructions',
@@ -62,6 +63,7 @@ class DigitalEngine:
 
     def process_instruction(self, instruction):
         if instruction['type'] == 'MOVE':
+            self.pickup = instruction['pickup']
             self.destination = instruction['destination']
             self.color = "GREEN"
             self.move_to_destination()
@@ -75,23 +77,40 @@ class DigitalEngine:
             self.move_to_destination()
 
     def move_to_destination(self):
+        while self.position != self.pickup and self.color == "GREEN":
+            # Movimiento octogonal hacia el pickup
+            self.move_towards(self.pickup)
+
         while self.position != self.destination and self.color == "GREEN":
-            # Simple movement logic
-            if self.position[0] < self.destination[0]:
-                self.position[0] += 1
-            elif self.position[0] > self.destination[0]:
-                self.position[0] -= 1
-            elif self.position[1] < self.destination[1]:
-                self.position[1] += 1
-            elif self.position[1] > self.destination[1]:
-                self.position[1] -= 1
-            
-            self.send_position_update()
-            time.sleep(1)  # Wait for 1 second between movements
-        
+            # Movimiento octogonal hacia el destino
+            self.move_towards(self.destination)
+
         if self.position == self.destination:
             self.color = "RED"
+            self.status = "END"
             self.send_position_update()
+            time.sleep(4)
+            self.status = "FREE"
+            self.send_position_update()
+            
+    def move_towards(self, target):
+        # Movimiento octogonal con ajuste de límites
+        if self.position[0] < target[0]:
+            self.position[0] += 1
+        elif self.position[0] > target[0]:
+            self.position[0] -= 1
+        
+        if self.position[1] < target[1]:
+            self.position[1] += 1
+        elif self.position[1] > target[1]:
+            self.position[1] -= 1
+
+        # Manejo de límites (wrap-around)
+        self.position[0] = self.position[0] % 20  # Mantener en el rango [0, 19]
+        self.position[1] = self.position[1] % 20  # Mantener en el rango [0, 19]
+        
+        self.send_position_update()
+        time.sleep(1)  # Esperar 1 segundo entre movimientos
 
     def send_position_update(self):
         update = {

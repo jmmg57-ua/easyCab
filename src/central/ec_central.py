@@ -1,5 +1,4 @@
 import time
-import tkinter as tk
 import logging
 import socket
 import sys
@@ -18,9 +17,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Taxi:
     id: int
-    status: str  # 'FREE', 'BUSY'
+    status: str  # 'FREE', 'BUSY', 'END'
     color: str  # 'RED' (parado) o 'GREEN' (en movimiento)
     position: Tuple[int, int]
+    customer_asigned: int
 
 @dataclass
 class Location:
@@ -40,46 +40,9 @@ class ECCentral:
         self.taxis_file = '/data/taxis.txt'  # Ruta al fichero de taxis
         self.taxis = {}  # Guardar taxis en un atributo
         self.locations = {}
-        self.root = tk.Tk()
-        self.root.title("EC_Central Taxi Map")
-        self.canvas = tk.Canvas(self.root, width=400, height=400)
-        self.canvas.pack()
-        self.menu = tk.Menu(self.root)
-        self.root.config(menu=self.menu)
-        control_menu = tk.Menu(self.menu)
-        self.menu.add_cascade(label="Control", menu=control_menu)
-        control_menu.add_command(label="Stop All Taxis", command=self.stop_all_taxis)
-        control_menu.add_command(label="Resume All Taxis", command=self.resume_all_taxis)
         
         self.kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
         self.kafka_thread.start()
-
-    def draw_map(self):
-        cell_size = 20
-        self.canvas.delete("all")
-        for y in range(self.map_size[1]):
-            for x in range(self.map_size[0]):
-                color = "white"
-                if (x, y) in self.locations:
-                    color = "blue"
-                elif (x, y) in [taxi.position for taxi in self.taxis.values()]:
-                    color = "green" if self.taxis[(x, y)].status == "BUSY" else "red"
-                self.canvas.create_rectangle(x * cell_size, y * cell_size, (x+1) * cell_size, (y+1) * cell_size, fill=color)
-
-    def stop_all_taxis(self):
-        for taxi in self.taxis.values():
-            self.send_taxi_instruction(taxi.id, "STOP")
-
-    def resume_all_taxis(self):
-        for taxi in self.taxis.values():
-            self.send_taxi_instruction(taxi.id, "RESUME")
-
-    def send_taxi_instruction(self, taxi_id, instruction):
-        if self.producer:
-            self.producer.send("taxi_instructions", {
-                "taxi_id": taxi_id,
-                "instruction": instruction
-            })
 
     def load_map_config(self):
         try:
@@ -87,8 +50,9 @@ class ECCentral:
                 for line in f:
                     loc_id, x, y = line.strip().split()
                     x, y = int(x), int(y)
-                    self.locations[loc_id] = Location(loc_id, (x, y))
+                    self.locations[loc_id] = Location(loc_id, (x, y),"BLUE")
                     self.map[y, x] = loc_id
+                    
             logger.info("Map configuration loaded successfully")
         except Exception as e:
             logger.error(f"Error loading map configuration: {e}")
@@ -99,12 +63,13 @@ class ECCentral:
         try:
             with open(self.taxis_file, 'r') as f:
                 for line in f:
-                    taxi_id, status, color, pos_x, pos_y = line.strip().split('#')
+                    taxi_id, status, color, pos_x, pos_y, customer_asigned = line.strip().split('#')
                     taxis[int(taxi_id)] = Taxi(
                         id=int(taxi_id),
                         position=(int(pos_x), int(pos_y)),
                         status=status,
-                        color=color
+                        color=color,
+                        customer_asigned=customer_asigned
                     )
             logger.info("Taxis loaded from file")
         except Exception as e:
@@ -116,7 +81,7 @@ class ECCentral:
         try:
             with open(self.taxis_file, 'w') as f:
                 for taxi in taxis.values():
-                    f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}\n")
+                    f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}#{taxi.customer_asigned}\n")
             logger.info("Taxis saved to file")
             self.validate_taxis_file()
         except Exception as e:
@@ -156,6 +121,15 @@ class ECCentral:
         finally:
             conn.close()
     
+    def notify_customer(self, taxi):                
+        self.producer.send('taxi_response', {
+                'customer_id': taxi.customer_asigned,
+                'status': "END",
+                'assigned_taxi': taxi.id
+            })
+        logger.info(f"Completed trip from taxi {taxi.id} for customer {taxi.customer_asigned}")
+         
+    
     def update_map(self, update):
             """
             Actualiza el estado del mapa según las actualizaciones de posición de los taxis.
@@ -163,19 +137,58 @@ class ECCentral:
             taxi_id = update['taxi_id']
             pos_x, pos_y = update['position']
             status = update['status']
+            color = update['color']
+            customer_asigned = update['customer_id']
 
             # Si el taxi existe, actualizamos sus datos; si no, lo creamos
             if taxi_id in self.taxis:
                 taxi = self.taxis[taxi_id]
                 taxi.position = (pos_x, pos_y)
                 taxi.status = status
-                taxi.color = 'GREEN' if status == 'BUSY' else 'RED'
+                taxi.color = color
+                taxi.customer_asigned = customer_asigned
+                if taxi.status == "END":
+                    self.notify_customer(taxi)
             else:
                 logger.warning(f'There is no taxi with the id = {taxi_id}')
             
             # Redibuja el mapa en la interfaz y emite una transmisión con el mapa actualizado
             self.draw_map()
             self.broadcast_map()
+   
+
+    def draw_map(self):
+        """Dibuja el mapa en los logs con delimitación de bordes."""
+        logger.info("Current Map State with Borders:")
+        map_lines = [""]  # Agrega una línea vacía al inicio
+
+        # Crear el borde superior
+        border_row = "#" * (self.map_size[1] + 2)
+        map_lines.append(border_row)
+
+        # Limpiar el mapa primero
+        self.map.fill(' ')
+
+        # Colocar las ubicaciones en el mapa
+        for location in self.locations.values():
+            x, y = location.position
+            self.map[y, x] = location.id
+
+        # Colocar los taxis en el mapa
+        for taxi in self.taxis.values():
+            x, y = taxi.position
+            self.map[y, x] = str(taxi.id)  # Usar el ID del taxi como representación
+
+        # Crear cada fila con delimitadores laterales
+        for row in self.map:
+            map_lines.append("#" + "".join(row) + "#")
+
+        # Agregar el borde inferior
+        map_lines.append(border_row)
+        
+        # Unir las líneas y registrarlas
+        logger.info("\n".join(map_lines))
+
 
     def broadcast_map(self):
         """
@@ -243,7 +256,6 @@ class ECCentral:
             self.producer.send('taxi_instructions', {
                 'taxi_id': available_taxi.id,
                 'instruction': 'MOVE',
-                'customer_id': customer_id,
                 'pickup': self.locations[customer_location].position,
                 'destination': self.locations[destination].position     #PRIMERO TIENE QUE IR A LA UBI, DESPUES A LA LOCATION (done)
             })
@@ -274,30 +286,6 @@ class ECCentral:
             logger.warning("No available taxis")
             return False
 
-    def process_taxi_update(self, update):
-        taxi_id = update['taxi_id']
-
-        # Cargar taxis desde el fichero
-        taxis = self.load_taxis()
-
-        #NO SABEMOS SI PODEMOS CREAR TAXIS SI NO HAY AUN
-        if taxi_id not in taxis:
-            logger.error(f"Taxi {taxi_id} not recognized. Ignoring update.")
-            return
-
-        taxi = taxis[taxi_id]
-        if 'position' in update:
-            taxi.position = tuple(update['position'])
-        if 'status' in update:
-            taxi.status = update['status']
-            taxi.color = 'GREEN'  if taxi.status == 'BUSY' else 'RED'
-        
-        # Guardar los cambios en el fichero
-        self.save_taxis(taxis)
-
-        # Actualizar el mapa
-        self.update_map(taxis)
-
     def kafka_listener(self):
         """Hilo para escuchar los mensajes de Kafka."""
         for message in self.consumer:
@@ -315,6 +303,25 @@ class ECCentral:
             self.broadcast_map()
             time.sleep(1)  # Espera 1 segundo antes de volver a enviar
 
+    def start_server_socket(self):
+        """Configura el servidor de sockets y maneja la autenticación de taxis en un hilo separado."""
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind(('0.0.0.0', self.listen_port))
+        self.server_socket.listen(5)  # Permitir hasta 5 conexiones en espera
+        logger.info(f"Listening for taxi connections on port {self.listen_port}...")
+
+        try:
+            while True:
+                conn, addr = self.server_socket.accept()
+                # Crear un hilo para manejar la autenticación del taxi
+                threading.Thread(target=self.handle_taxi_auth, args=(conn, addr), daemon=True).start()
+        except Exception as e:
+            logger.error(f"Error in start_server_socket: {e}")
+        finally:
+            if self.server_socket:
+                self.server_socket.close()
+
+
     def run(self):
         if not self.connect_kafka():
             return
@@ -328,33 +335,15 @@ class ECCentral:
         # Iniciar el hilo para la visualización del mapa
         map_broadcast_thread = threading.Thread(target=self.auto_broadcast_map, daemon=True)
         map_broadcast_thread.start()
-    
-        self.root.mainloop()
-    
-        #No comprobado que varios taxis se conecten
+
+        # Iniciar el hilo para escuchar mensajes Kafka
         kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
         kafka_thread.start()
 
-        # Configurar el servidor de sockets
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind(('0.0.0.0', self.listen_port))
-        self.server_socket.listen(5)  # Permitir hasta 5 conexiones en espera
-        logger.info(f"Listening for taxi connections on port {self.listen_port}...")
+        # Iniciar el servidor de autenticación de taxis en un hilo separado
+        auth_thread = threading.Thread(target=self.start_server_socket, daemon=True)
+        auth_thread.start()
 
-        try:
-            while True:
-                conn, addr = self.server_socket.accept()
-                # Crear un hilo para manejar la autenticación del taxi
-                threading.Thread(target=self.handle_taxi_auth, args=(conn, addr), daemon=True).start()
-        except KeyboardInterrupt:                       ###Crear menu, comprobar terminal
-            logger.info("Shutting down EC_Central...")
-        finally:
-            if self.producer:
-                self.producer.close()
-            if self.consumer:
-                self.consumer.close()
-            if self.server_socket:
-                self.server_socket.close()
             
 if __name__ == "__main__":
     if len(sys.argv) < 3:

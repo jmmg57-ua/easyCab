@@ -82,6 +82,9 @@ class Customer:
             response = message.value
             if response.get('customer_id') == self.customer_id:
                 status = response.get('status')
+                if status == 'END': 
+                    self.logger.info(f"Service completed: {response}")
+                    return True
                 if status == 'OK':
                     self.logger.info(f"Service accepted: {response}")
                     return True
