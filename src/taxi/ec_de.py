@@ -5,6 +5,7 @@ import time
 import json
 import logging
 from kafka import KafkaConsumer, KafkaProducer
+from kafka.errors import KafkaError  # Asegúrate de importar KafkaError
 import numpy as np
 
 # Configurar el logger
@@ -28,6 +29,39 @@ class DigitalEngine:
         self.pickup = None
         self.destination = None
         self.customer_asigned = None
+        self.setup_kafka()
+
+    def setup_kafka(self):
+        retry_count = 0
+        while retry_count < 5:
+            try:
+                # Set up Kafka Producer
+                self.producer = KafkaProducer(
+                    bootstrap_servers=[self.kafka_broker],
+                    value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                    retries=3
+                )
+                logger.info("Kafka producer set up successfully")
+
+                # Set up Kafka Consumer for responses
+                self.consumer = KafkaConsumer(
+                    'taxi_instructions','map_updates',
+                    bootstrap_servers=[self.kafka_broker],
+                    value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+                    group_id=f'customer_{self.taxi_id}',
+                    auto_offset_reset='earliest'
+                )
+                logger.info("Kafka consumer set up successfully")
+                return
+            
+            except KafkaError as e:
+                retry_count += 1
+                logger.error(f"Failed to set up Kafka: {e}. Retrying in 5 seconds...")
+                time.sleep(5)
+        
+        logger.critical("Failed to set up Kafka after 5 attempts. Exiting.")
+        sys.exit(1)
+
     
     def connect_to_central(self):
         try:
@@ -44,26 +78,6 @@ class DigitalEngine:
         self.sensor_socket.listen(1)
         logger.info(f"Digital Engine for Taxi {self.taxi_id} initialized")
 
-
-    def connect_kafka(self):
-        try:
-            self.producer = KafkaProducer(
-                bootstrap_servers=self.kafka_broker,
-                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-                max_block_ms=5000  # Establecer timeout de 5 segundos para enviar mensajes
-            )
-            self.consumer = KafkaConsumer(
-                'taxi_instructions', 'updated_map',
-                bootstrap_servers=self.kafka_broker,
-                group_id='central_group',
-                value_deserializer=lambda m: json.loads(m.decode('utf-8'))
-            )
-            logger.info("Successfully connected to Kafka")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to connect to Kafka: {e}")
-            return False
-
     def authenticate(self):
         auth_message = f"{self.taxi_id}"
         self.central_socket.send(auth_message.encode())
@@ -74,21 +88,46 @@ class DigitalEngine:
         else:
             logger.warning(f"Authentication failed for Taxi {self.taxi_id}")
             return False
+        
+    def kafka_listener(self):
+        while True:
+            try:
+                for message in self.consumer:
+                    if message.topic == 'taxi_instructions':
+                        data = message.value
+                        logger.info(f"Received message on topic 'taxi_instructions': {data}")
+                        # Verificar si 'taxi_id' está en la instrucción
+                        if 'taxi_id' not in data:
+                            logger.warning("Received instruction does not contain 'taxi_id'. Skipping.")
+                            continue  # Salir de este ciclo y esperar la siguiente instrucción
 
-    def listen_for_instructions(self):
-        logger.info("Listening for instructions from Kafka topic 'taxi_instructions'...")
-        for message in self.consumer:
-            instruction = message.value
-            if instruction['taxi_id'] == self.taxi_id:
-                logger.info("message recieved in topic 'taxi_instructions'.")
-                self.process_instruction(instruction)
+                        if data['taxi_id'] == self.taxi_id:
+                            logger.info("Message received in topic 'taxi_instructions'.")
+                            self.process_instruction(data)
+                        
+                    elif message.topic == 'map_updates':
+                        data = message.value
+                        logger.info(f"Received message on topic 'map_updates'")
+                        self.process_map_update(data)
+
+            except KafkaError as e:
+                logger.error(f"Kafka listener error: {e}")
+                self.setup_kafka()  # Reintentar la conexión
+                time.sleep(5)
+            except Exception as e:
+                logger.error(f"General error in kafka_listener: {e} {message.topic}")
+                time.sleep(5)  # Evitar cierre inmediato
 
     def process_instruction(self, instruction):
         if instruction['type'] == 'MOVE':
             self.pickup = instruction['pickup']
+            logger.info(f'PICK UP LOCATION = {self.pickup}')
             self.destination = instruction['destination']
+            logger.info(f'DESTINATION LOCATION = {self.destination}')
             self.color = "GREEN"
             self.customer_asigned = ['customer_id']
+            logger.info(f'ASIGNED CUSTOMER = {self.customer_asigned}')
+            self.move_to_destination()
         elif instruction['type'] == 'STOP':
             self.color = "RED"
         elif instruction['type'] == 'RESUME':
@@ -145,8 +184,9 @@ class DigitalEngine:
             'customer_id': self.customer_asigned
         }
         logger.info("Sending update through 'taxi_updates'")
+        # Serializar el diccionario `update` a JSON antes de enviarlo
         self.producer.send('taxi_updates', update)
-    
+        
     def listen_for_map_updates(self):
         
         consumer = KafkaConsumer(
@@ -165,7 +205,7 @@ class DigitalEngine:
     def process_map_update(self, map_data):
         """Procesa el mapa recibido, realiza cambios si es necesario y lo envía de vuelta."""
         # (Opcional) Realizar modificaciones en el mapa basado en la posición actual del taxi
-        self.move_to_destination()
+        #self.move_to_destination()
         #self.draw_map(map_data)
         
     def draw_map(self, map_data):
@@ -219,9 +259,7 @@ class DigitalEngine:
                 self.send_position_update()
 
     def run(self):
-        if not self.connect_kafka():
-            return
-        
+       
         #self.set_up_socket_sensor()
         #logger.info("Waiting for sensor connection...")
         #conn, addr = self.sensor_socket.accept()
@@ -233,9 +271,8 @@ class DigitalEngine:
 
         logger.info("Digital Engine is running...")
         
-        kafka_thread = threading.Thread(target=self.listen_for_instructions, daemon=True)
-        kafka_thread.start()
-        
+        # Iniciar el hilo para escuchar mensajes Kafka
+        threading.Thread(target=self.kafka_listener, daemon=True).start()
         #threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
         
         # Crear hilo para escuchar actualizaciones del mapa

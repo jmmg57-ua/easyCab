@@ -12,7 +12,7 @@ class Customer:
         self.services_file = services_file
         self.producer = None
         self.consumer = None
-        self.customer_location = tuple(map(int, customer_location.split(',')))
+        self.customer_location = [int(coord) for coord in customer_location.split(',')]  # Almacena como lista
         
         # Set up logging
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - Customer %(message)s')
@@ -37,7 +37,7 @@ class Customer:
                     'taxi_responses',
                     bootstrap_servers=[self.kafka_broker],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-                    group_id=self.customer_id,  # Unique group ID for this customer
+                    group_id=f'customer_{self.customer_id}',  # Unique group ID for this customer
                     auto_offset_reset='earliest'
                 )
                 self.logger.info("Kafka consumer set up successfully")
@@ -63,7 +63,7 @@ class Customer:
         request = {
             'customer_id': self.customer_id,
             'destination': destination,
-            'customer_location': self.customer_location,        #Añadida la localización del cliente al mensaje del request
+            'customer_location': self.customer_location      #Añadida la localización del cliente al mensaje del request
         }
         try:
             self.producer.send('taxi_requests', request)
@@ -81,15 +81,32 @@ class Customer:
             response = message.value
             if response['customer_id'] == self.customer_id:
                 status = response['status']
-                if status == 'END': 
-                    self.logger.info(f"Service completed: {response}")
-                    return True
                 if status == 'OK':
                     self.logger.info(f"Service accepted: {response}")
                     return True
                 elif status == 'KO':
                     self.logger.info(f"Service rejected: {response}")
                     return False
+                
+    def wait_till_finished(self):
+        """Espera hasta recibir una confirmación de finalización en 'taxi_responses'."""
+        self.logger.info("Waiting for service completion confirmation...")
+
+        # Escuchar indefinidamente hasta que el servicio se complete
+        for message in self.consumer:
+            response = message.value
+            
+            self.logger.info(f"Received response: {response}")
+            
+            # Comprobar si la respuesta es para este cliente y el servicio ha finalizado
+            if response.get('customer_id') == self.customer_id and response.get('status') == "END":
+                self.logger.info("Service completed.")
+                return True  # El servicio ha finalizado correctamente
+            
+        # Si el bucle se rompe inesperadamente (por manejo de excepciones externas)
+        self.logger.warning("Listener stopped unexpectedly.")
+        return False
+
 
     def run(self):
         services = self.read_services()
@@ -106,8 +123,8 @@ class Customer:
             if confirmation:
                 self.logger.info(f"Service to {service} asigned successfully.")
                 
-                confirmation = self.wait_for_confirmation()
-                if confirmation:
+                completed = self.wait_till_finished()
+                if completed:
                     self.logger.info(f"Service to {service} completed")
                     self.logger.info(f"Wait 4 seconds before requesting the next service")
                     time.sleep(4)

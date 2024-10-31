@@ -41,6 +41,38 @@ class ECCentral:
         self.taxis = {}  # Guardar taxis en un atributo
         self.locations = {}
         self.map_changed = False  # Estado para detectar cambios en el mapa
+        self.setup_kafka()
+
+    def setup_kafka(self):
+        retry_count = 0
+        while retry_count < 5:
+            try:
+                # Set up Kafka Producer
+                self.producer = KafkaProducer(
+                    bootstrap_servers=[self.kafka_bootstrap_servers],
+                    value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                    retries=3
+                )
+                logger.info("Kafka producer set up successfully")
+
+                # Set up Kafka Consumer for responses
+                self.consumer = KafkaConsumer(
+                    'taxi_updates','taxi_requests',
+                    bootstrap_servers=[self.kafka_bootstrap_servers],
+                    value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+                    group_id='central-group',
+                    auto_offset_reset='earliest'
+                )
+                logger.info("Kafka consumer set up successfully")
+                return
+            except KafkaError as e:
+                retry_count += 1
+                logger.error(f"Failed to set up Kafka: {e}. Retrying in 5 seconds...")
+                time.sleep(5)
+        
+        logger.critical("Failed to set up Kafka after 5 attempts. Exiting.")
+        sys.exit(1)
+
 
     def load_map_config(self):
         try:
@@ -81,21 +113,8 @@ class ECCentral:
                 for taxi in taxis.values():
                     f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}#{taxi.customer_asigned}\n")
             logger.info("Taxis saved to file")
-            self.validate_taxis_file()
         except Exception as e:
             logger.error(f"Error saving taxis to file: {e}")
-
-    def validate_taxis_file(self):
-        """Valida el archivo de taxis para asegurarse de que no está corrupto."""
-        try:
-            with open(self.taxis_file, 'r') as f:
-                for line in f:
-                    parts = line.strip().split('#')
-                    if len(parts) != 5:
-                        raise ValueError(f"Invalid line in taxis file: {line}")
-            logger.info("Taxis file validation successful")
-        except Exception as e:
-            logger.error(f"Error validating taxis file: {e}")
 
     def handle_taxi_auth(self, conn, addr):
         """Maneja la autenticación del taxi."""
@@ -119,30 +138,56 @@ class ECCentral:
         finally:
             conn.close()
     
-    def notify_customer(self, taxi):                
-        self.producer.send('taxi_response', {
-                'customer_id': taxi.customer_asigned,
-                'status': "END",
-                'assigned_taxi': taxi.id
-            })
-        logger.info(f"Completed trip from taxi {taxi.id} for customer {taxi.customer_asigned}")
-         
+    def notify_customer(self, taxi):
+        response = {
+            'customer_id': taxi.customer_asigned,
+            'status': "END",
+            'assigned_taxi': taxi.id
+        }
+        try:
+            self.producer.send('taxi_responses', response)
+            self.producer.flush()
+            logger.info(f"Trip completed sending to customer {taxi.customer_asigned}: {response}")
+        except KafkaError as e:
+            logger.error(f"Failed to send confirmation to customer {taxi.customer_asigned}: {e}")
+
     
     def update_map(self, update):
-        taxi_id = update['taxi_id']
-        pos_x, pos_y = update['position']
-        status = update['status']
-        color = update['color']
-        customer_asigned = update['customer_id']
+        try:
+            # Verificar que las claves esperadas estén presentes
+            if not all(key in update for key in ['taxi_id', 'position', 'status', 'color', 'customer_id']):
+                logger.error("Update message missing required fields.")
+                return
 
-        # Actualizar estado del taxi
-        taxi_updated = self.update_taxi_state(taxi_id, pos_x, pos_y, status, color, customer_asigned)
+            # Extraer y validar la posición
+            taxi_id = update['taxi_id']
+            position = update['position']
+            
+            if isinstance(position, (list, tuple)) and len(position) == 2:
+                pos_x, pos_y = position
+            else:
+                logger.error(f"Invalid position format for taxi_id {taxi_id}: {position}")
+                return
+            
+            # Asignar los demás valores
+            status = update['status']
+            color = update['color']
+            customer_asigned = update['customer_id']
+
+            # Actualizar el estado del taxi
+            taxi_updated = self.update_taxi_state(taxi_id, pos_x, pos_y, status, color, customer_asigned)
+
+            # Finalizar viaje y notificar al cliente, si es necesario
+            self.finalize_trip_if_needed(taxi_updated)
+
+            # Redibujar y emitir el mapa actualizado
+            self.redraw_map_and_broadcast()
         
-        # Finalizar viaje y notificar al cliente, si es necesario
-        self.finalize_trip_if_needed(taxi_updated)
+        except KeyError as e:
+            logger.error(f"Key error when processing update: missing key {e}")
+        except Exception as e:
+            logger.error(f"Error in update_map: {e}")
 
-        # Redibujar y emitir el mapa actualizado
-        self.redraw_map_and_broadcast()
 
     def update_taxi_state(self, taxi_id, pos_x, pos_y, status, color, customer_asigned):
         """Actualiza la información del taxi en el sistema."""
@@ -161,7 +206,7 @@ class ECCentral:
 
     def finalize_trip_if_needed(self, taxi):
         """Notifica al cliente si el taxi ha finalizado el viaje."""
-        if taxi and taxi.status == "END":
+        if taxi.status == "END":
             self.notify_customer(taxi)
 
     def redraw_map_and_broadcast(self):
@@ -221,27 +266,16 @@ class ECCentral:
             except KafkaError as e:
                 logger.error(f"Error broadcasting map: {e}")
 
-    def connect_kafka(self):
-        try:
-            self.producer = KafkaProducer(
-                bootstrap_servers=self.kafka_bootstrap_servers,
-                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-                max_block_ms=5000  # Establecer timeout de 5 segundos para enviar mensajes
-            )
-            logger.info("Successfully connected to Kafka")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to connect to Kafka: {e}")
-            return False
-
     def process_customer_request(self, request):
         customer_id = request['customer_id']
         destination = request['destination']
         customer_location = request['customer_location']
 
-        # Verifica si la ubicación del cliente es válida y la agrega al mapa
+        # Verifica si la ubicación del cliente es válida
         if customer_location:
-            self.locations[f'customer_{customer_id}'] = Location(f'customer_{customer_id}', customer_location, 'YELLOW')
+            # Convierte la ubicación del cliente a tupla para evitar el error de tipo 'unhashable'
+            location_key = tuple(customer_location)
+            self.locations[f'customer_{customer_id}'] = Location(f'customer_{customer_id}', location_key, 'YELLOW')
             self.map_changed = True  # Marcar como cambiado
 
         # Validación de la ubicación de destino
@@ -252,12 +286,13 @@ class ECCentral:
         # Selección y asignación del taxi
         available_taxi = self.select_available_taxi()
         if available_taxi:
-            self.assign_taxi_to_customer(available_taxi, customer_id, customer_location, destination)
+            self.assign_taxi_to_customer(available_taxi, customer_id, location_key, destination)
             self.map_changed = True  # Marcar como cambiado
             return True
         else:
             logger.warning("No available taxis")
             return False
+
 
     def select_available_taxi(self):
         """Selecciona el primer taxi disponible con estado 'FREE'."""
@@ -277,11 +312,15 @@ class ECCentral:
 
     def send_taxi_instruction(self, taxi, customer_id, pickup_location, destination):
         """Envía instrucciones al taxi para recoger al cliente y llevarlo al destino."""
+        pickup_position = self.locations[pickup_location].position if isinstance(pickup_location, str) else pickup_location
+        destination_position = self.locations[destination].position if isinstance(destination, str) else destination
+        logger.info(f'Pickup_position = {pickup_position}, destination_position = {destination_position}')
+    
         instruction = {
             'taxi_id': taxi.id,
-            'instruction': 'MOVE',
-            'pickup': self.locations[pickup_location].position,
-            'destination': self.locations[destination].position,
+            'type': 'MOVE',
+            'pickup': pickup_position,
+            'destination': destination_position,
             'customer_id': customer_id
         }
         self.producer.send('taxi_instructions', instruction)
@@ -300,50 +339,27 @@ class ECCentral:
             logger.info(f"Confirmation sent to customer {customer_id}: {response}")
         except KafkaError as e:
             logger.error(f"Failed to send confirmation to customer {customer_id}: {e}")
-    
-    def create_consumer(self, topic):
-        """Crea un consumidor de Kafka para un tópico específico."""
-        return KafkaConsumer(
-            topic,
-            auto_offset_reset='earliest',
-            bootstrap_servers=['kafka:9092'],
-            group_id=f"{topic}_listener_group"
-        )
 
-    def kafka_listener_taxi_requests(self):
-        consumer = self.create_consumer('taxi_requests')
+    def kafka_listener(self):
         while True:
             try:
-                for message in consumer:
+                for message in self.consumer:
                     if message.topic == 'taxi_requests':
                         data = message.value
                         logger.info(f"Received message on topic 'taxi_requests': {data}")
                         self.process_customer_request(data)
-
-            except KafkaError as e:
-                logger.error(f"Kafka listener error: {e}")
-                self.connect_kafka()  # Reintentar la conexión
-                time.sleep(5)
-            except Exception as e:
-                logger.error(f"General error in kafka_listener_taxi_requests: {e}")
-                time.sleep(5)  # Evitar cierre inmediato
-
-    def kafka_listener_taxi_updates(self):
-        consumer = self.create_consumer('taxi_requests')
-        while True:
-            try:
-                for message in consumer:
-                    if message.topic == 'taxi_updates':
+                        
+                    elif message.topic == 'taxi_updates':
                         data = message.value
                         logger.info(f"Received message on topic 'taxi_updates': {data}")
                         self.update_map(data)
 
             except KafkaError as e:
                 logger.error(f"Kafka listener error: {e}")
-                self.connect_kafka()  # Reintentar la conexión
+                self.setup_kafka()  # Reintentar la conexión
                 time.sleep(5)
             except Exception as e:
-                logger.error(f"General error in kafka_listener_taxi_updates: {e}")
+                logger.error(f"General error in kafka_listener: {e} {message.topic}")
                 time.sleep(5)  # Evitar cierre inmediato
 
     def auto_broadcast_map(self):
@@ -388,9 +404,6 @@ class ECCentral:
 
 
     def run(self):
-        if not self.connect_kafka():
-            return
-
         self.load_map_config()
         self.load_taxis()
         logger.info("EC_Central is running...")
@@ -403,8 +416,8 @@ class ECCentral:
         auth_thread.start()
         
         # Iniciar el hilo para escuchar mensajes Kafka
-        threading.Thread(target=self.kafka_listener_taxi_requests, daemon=True).start()
-        threading.Thread(target=self.kafka_listener_taxi_updates, daemon=True).start()
+        threading.Thread(target=self.kafka_listener, daemon=True).start()
+        
         # Iniciar el hilo para la visualización del mapa
         map_broadcast_thread = threading.Thread(target=self.auto_broadcast_map, daemon=True)
         map_broadcast_thread.start()
