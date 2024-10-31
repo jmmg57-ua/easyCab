@@ -6,7 +6,6 @@ import random
 import logging
 
 
-# Configurar el logger
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
@@ -17,7 +16,7 @@ class Sensors:
         self.ec_de_port = ec_de_port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.status = "OK"
-        self.running = True  # Para controlar el ciclo de los hilos
+        self.running = True
 
     def connect_to_digital_engine(self):
         try:
@@ -40,29 +39,26 @@ class Sensors:
 
     def random_incident_simulation(self):
         while self.running:
-            # Cambiar el estado a "KO" aleatoriamente
-            if random.random() < 0:  # 10% de probabilidad de incidentes
+            if random.random() < 0: 
                 self.status = "KO"
                 logger.info("Random incident simulated. Status set to KO")
             else:
-                self.status = "OK"  # Restaurar a OK
-                time.sleep(3)  # Esperar 3 segundos antes de comprobar nuevamente
+                self.status = "OK" 
+                time.sleep(3) 
 
     def run(self):
         if not self.connect_to_digital_engine():
             return
 
-        # Iniciar hilos para enviar estados y simular incidentes
         threading.Thread(target=self.send_status, daemon=True).start()
         threading.Thread(target=self.random_incident_simulation, daemon=True).start()
         
-        # Mantener el hilo principal en ejecución
         try:
             while self.running:
-                time.sleep(1)  # Esperar para no consumir CPU innecesariamente
+                time.sleep(1)  
         except KeyboardInterrupt:
             logger.info("Shutting down...")
-            self.running = False  # Detener hilos al cerrar el programa
+            self.running = False  
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
