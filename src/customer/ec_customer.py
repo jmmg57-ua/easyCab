@@ -100,6 +100,7 @@ class Customer:
             
             # Comprobar si la respuesta es para este cliente y el servicio ha finalizado
             if response.get('customer_id') == self.customer_id and response.get('status') == "END":
+                self.customer_location = response.get('final_position')
                 self.logger.info("Service completed.")
                 return True  # El servicio ha finalizado correctamente
             
@@ -138,7 +139,7 @@ class Customer:
 
 if __name__ == "__main__":
     if len(sys.argv) != 5:
-        print("Usage: python EC_Customer.py <Kafka_Broker> <Customer_ID> <Services_File>")
+        print("Usage: python EC_Customer.py <Kafka_Broker> <Customer_ID> <Services_File> <Customer_Location>")
         sys.exit(1)
 
     kafka_broker = sys.argv[1]

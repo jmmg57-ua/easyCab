@@ -29,6 +29,7 @@ class DigitalEngine:
         self.pickup = None
         self.destination = None
         self.customer_asigned = None
+        self.picked_off = 0
         self.setup_kafka()
 
     def setup_kafka(self):
@@ -125,7 +126,7 @@ class DigitalEngine:
             self.destination = instruction['destination']
             logger.info(f'DESTINATION LOCATION = {self.destination}')
             self.color = "GREEN"
-            self.customer_asigned = ['customer_id']
+            self.customer_asigned = instruction['customer_id']
             logger.info(f'ASIGNED CUSTOMER = {self.customer_asigned}')
             self.move_to_destination()
         elif instruction['type'] == 'STOP':
@@ -141,6 +142,9 @@ class DigitalEngine:
             logger.info("Taxi moving towards the pickup location")
             self.move_towards(self.pickup)
 
+        if self.position == self.pickup:
+            self.picked_off = 1
+        
         while self.position != self.destination and self.color == "GREEN":
             logger.info("Taxi moving towards the destination location")
             self.move_towards(self.destination)
@@ -152,6 +156,7 @@ class DigitalEngine:
             self.send_position_update()
             time.sleep(4)
             self.status = "FREE"
+            self.picked_off = 0
             logger.info("Taxi is now FREE!!")
             self.send_position_update()
             
@@ -181,7 +186,8 @@ class DigitalEngine:
             'status': self.status,
             'color': self.color,
             'position': self.position,
-            'customer_id': self.customer_asigned
+            'customer_id': self.customer_asigned,
+            'picked_off': self.picked_off
         }
         logger.info("Sending update through 'taxi_updates'")
         # Serializar el diccionario `update` a JSON antes de enviarlo
@@ -260,9 +266,9 @@ class DigitalEngine:
 
     def run(self):
        
-        #self.set_up_socket_sensor()
-        #logger.info("Waiting for sensor connection...")
-        #conn, addr = self.sensor_socket.accept()
+        self.set_up_socket_sensor()
+        logger.info("Waiting for sensor connection...")
+        conn, addr = self.sensor_socket.accept()
         
         self.connect_to_central()
         
@@ -273,7 +279,7 @@ class DigitalEngine:
         
         # Iniciar el hilo para escuchar mensajes Kafka
         threading.Thread(target=self.kafka_listener, daemon=True).start()
-        #threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
+        threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
         
         # Crear hilo para escuchar actualizaciones del mapa
         map_update_thread = threading.Thread(target=self.listen_for_map_updates, daemon=True)

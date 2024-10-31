@@ -20,7 +20,8 @@ class Taxi:
     status: str  # 'FREE', 'BUSY', 'END'
     color: str  # 'RED' (parado) o 'GREEN' (en movimiento)
     position: Tuple[int, int]
-    customer_asigned: int
+    customer_asigned: str
+    picked_off: int
 
 @dataclass
 class Location:
@@ -93,13 +94,14 @@ class ECCentral:
         try:
             with open(self.taxis_file, 'r') as f:
                 for line in f:
-                    taxi_id, status, color, pos_x, pos_y, customer_asigned = line.strip().split('#')
+                    taxi_id, status, color, pos_x, pos_y, customer_asigned, picked_off = line.strip().split('#')
                     taxis[int(taxi_id)] = Taxi(
                         id=int(taxi_id),
                         position=(int(pos_x), int(pos_y)),
                         status=status,
                         color=color,
-                        customer_asigned=customer_asigned
+                        customer_asigned=customer_asigned,
+                        picked_off=picked_off
                     )
             logger.info("Taxis loaded from file")
         except Exception as e:
@@ -111,7 +113,7 @@ class ECCentral:
         try:
             with open(self.taxis_file, 'w') as f:
                 for taxi in taxis.values():
-                    f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}#{taxi.customer_asigned}\n")
+                    f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}#{taxi.customer_asigned}#{taxi.picked_off}\n")
             logger.info("Taxis saved to file")
         except Exception as e:
             logger.error(f"Error saving taxis to file: {e}")
@@ -139,17 +141,19 @@ class ECCentral:
             conn.close()
     
     def notify_customer(self, taxi):
+        customer_id = str(taxi.customer_asigned) if isinstance(taxi.customer_asigned, list) else taxi.customer_asigned
         response = {
-            'customer_id': taxi.customer_asigned,
+            'customer_id': customer_id,
             'status': "END",
-            'assigned_taxi': taxi.id
+            'assigned_taxi': taxi.id,
+            'final_position': taxi.position
         }
         try:
             self.producer.send('taxi_responses', response)
             self.producer.flush()
-            logger.info(f"Trip completed sending to customer {taxi.customer_asigned}: {response}")
+            logger.info(f"Trip completed sending to customer {customer_id}: {response}")
         except KafkaError as e:
-            logger.error(f"Failed to send confirmation to customer {taxi.customer_asigned}: {e}")
+            logger.error(f"Failed to send confirmation to customer {customer_id}: {e}")
 
     
     def update_map(self, update):
@@ -173,10 +177,10 @@ class ECCentral:
             status = update['status']
             color = update['color']
             customer_asigned = update['customer_id']
-
+            picked_off = update['picked_off']
             # Actualizar el estado del taxi
-            taxi_updated = self.update_taxi_state(taxi_id, pos_x, pos_y, status, color, customer_asigned)
-
+            taxi_updated = self.update_taxi_state(taxi_id, pos_x, pos_y, status, color, customer_asigned, picked_off)
+            logger.info(f"taxi_id = {taxi_updated.id}, tiene de customer a {taxi_updated.customer_asigned}")
             # Finalizar viaje y notificar al cliente, si es necesario
             self.finalize_trip_if_needed(taxi_updated)
 
@@ -189,7 +193,7 @@ class ECCentral:
             logger.error(f"Error in update_map: {e}")
 
 
-    def update_taxi_state(self, taxi_id, pos_x, pos_y, status, color, customer_asigned):
+    def update_taxi_state(self, taxi_id, pos_x, pos_y, status, color, customer_asigned, picked_off):
         """Actualiza la información del taxi en el sistema."""
         if taxi_id in self.taxis:
             taxi = self.taxis[taxi_id]
@@ -197,8 +201,11 @@ class ECCentral:
             taxi.status = status
             taxi.color = color
             taxi.customer_asigned = customer_asigned
+            taxi.picked_off = picked_off
             self.map_changed = True  # Marcar como cambiado
-
+            self.save_taxis(self.taxis)
+            if picked_off==1:
+                self.locations[customer_asigned].position = taxi.position 
             return taxi
         else:
             logger.warning(f"No taxi found with id {taxi_id}")
@@ -207,6 +214,7 @@ class ECCentral:
     def finalize_trip_if_needed(self, taxi):
         """Notifica al cliente si el taxi ha finalizado el viaje."""
         if taxi.status == "END":
+            self.save_taxis(self.taxis)
             self.notify_customer(taxi)
 
     def redraw_map_and_broadcast(self):
@@ -216,7 +224,7 @@ class ECCentral:
 
 
     def draw_map(self):
-        """Dibuja el mapa en los logs con delimitación de bordes."""
+        """Dibuja el mapa en los logs con delimitación de bordes, donde (0,0) no se representa."""
         logger.info("Current Map State with Borders:")
         map_lines = [""]  # Agrega una línea vacía al inicio
 
@@ -225,20 +233,21 @@ class ECCentral:
         map_lines.append(border_row)
 
         # Limpiar el mapa primero
-        self.map.fill(' ')
+        # Crear un nuevo mapa de tamaño (map_size[0] + 1, map_size[1] + 1) para incluir el borde
+        bordered_map = np.full((self.map_size[0] + 1, self.map_size[1] + 1), ' ', dtype=str)
 
         # Colocar las ubicaciones en el mapa
         for location in self.locations.values():
             x, y = location.position
-            self.map[y, x] = location.id
+            bordered_map[y - 1, x - 1] = location.id  # Ajustar posición para que empiece en (1,1)
 
         # Colocar los taxis en el mapa
         for taxi in self.taxis.values():
             x, y = taxi.position
-            self.map[y, x] = str(taxi.id)  # Usar el ID del taxi como representación
+            bordered_map[y - 1, x - 1] = str(taxi.id)  # Ajustar posición para que empiece en (1,1)
 
         # Crear cada fila con delimitadores laterales
-        for row in self.map:
+        for row in bordered_map:
             map_lines.append("#" + "".join(row) + "#")
 
         # Agregar el borde inferior
@@ -246,6 +255,7 @@ class ECCentral:
         
         # Unir las líneas y registrarlas
         logger.info("\n".join(map_lines))
+
 
 
     def broadcast_map(self):
@@ -275,7 +285,7 @@ class ECCentral:
         if customer_location:
             # Convierte la ubicación del cliente a tupla para evitar el error de tipo 'unhashable'
             location_key = tuple(customer_location)
-            self.locations[f'customer_{customer_id}'] = Location(f'customer_{customer_id}', location_key, 'YELLOW')
+            self.locations[customer_id] = Location(customer_id, location_key, 'YELLOW')
             self.map_changed = True  # Marcar como cambiado
 
         # Validación de la ubicación de destino
