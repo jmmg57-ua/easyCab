@@ -79,8 +79,8 @@ class Customer:
         self.logger.info("Waiting for confirmation from CENTRAL...")
         for message in self.consumer:
             response = message.value
-            if response.get('customer_id') == self.customer_id:
-                status = response.get('status')
+            if response['customer_id'] == self.customer_id:
+                status = response['status']
                 if status == 'END': 
                     self.logger.info(f"Service completed: {response}")
                     return True
@@ -98,7 +98,9 @@ class Customer:
             return
 
         for service in services:
+            
             self.request_service(service)
+            
             confirmation = self.wait_for_confirmation()
 
             if confirmation:

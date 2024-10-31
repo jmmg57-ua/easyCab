@@ -133,7 +133,7 @@ class ECCentral:
         pos_x, pos_y = update['position']
         status = update['status']
         color = update['color']
-        customer_asigned = update.get('customer_id')
+        customer_asigned = update['customer_id']
 
         # Actualizar estado del taxi
         taxi_updated = self.update_taxi_state(taxi_id, pos_x, pos_y, status, color, customer_asigned)
@@ -228,12 +228,6 @@ class ECCentral:
                 value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                 max_block_ms=5000  # Establecer timeout de 5 segundos para enviar mensajes
             )
-            self.consumer = KafkaConsumer(
-                'customer_requests', 'taxi_updates',
-                bootstrap_servers=self.kafka_bootstrap_servers,
-                group_id='central_group',
-                value_deserializer=lambda m: json.loads(m.decode('utf-8'))
-            )
             logger.info("Successfully connected to Kafka")
             return True
         except Exception as e:
@@ -306,41 +300,51 @@ class ECCentral:
             logger.info(f"Confirmation sent to customer {customer_id}: {response}")
         except KafkaError as e:
             logger.error(f"Failed to send confirmation to customer {customer_id}: {e}")
+    
+    def create_consumer(self, topic):
+        """Crea un consumidor de Kafka para un tópico específico."""
+        return KafkaConsumer(
+            topic,
+            auto_offset_reset='earliest',
+            bootstrap_servers=['kafka:9092'],
+            group_id=f"{topic}_listener_group"
+        )
 
-    def kafka_listener(self):
-        """Hilo para escuchar los mensajes de Kafka de diferentes tópicos."""
-        if not self.consumer:
-            logger.error("Kafka consumer is not initialized. Exiting listener.")
-            return  # Salir del listener si no está inicializado
-        
+    def kafka_listener_taxi_requests(self):
+        consumer = self.create_consumer('taxi_requests')
         while True:
             try:
-                # Bloquea y espera mensajes
-                for message in self.consumer:
-                    topic = message.topic
-                    data = message.value
-                    logger.info(f"Received message on topic '{topic}': {data}")
+                for message in consumer:
+                    if message.topic == 'taxi_requests':
+                        data = message.value
+                        logger.info(f"Received message on topic 'taxi_requests': {data}")
+                        self.process_customer_request(data)
 
-                    try:
-                        if topic == 'customer_requests':
-                            self.process_customer_request(data)
-                        elif topic == 'taxi_updates':
-                            self.update_map(data)
-                    except Exception as e:
-                        logger.error(f"Error processing message from topic {topic}: {e}")
-                        
             except KafkaError as e:
                 logger.error(f"Kafka listener error: {e}")
                 self.connect_kafka()  # Reintentar la conexión
                 time.sleep(5)
             except Exception as e:
-                logger.error(f"General error in kafka_listener: {e}")
+                logger.error(f"General error in kafka_listener_taxi_requests: {e}")
                 time.sleep(5)  # Evitar cierre inmediato
 
-    def restart_kafka_listener(self):
-        """Reinicia el listener en caso de fallo."""
-        logger.info("Restarting Kafka listener...")
-        threading.Thread(target=self.kafka_listener, daemon=True).start()
+    def kafka_listener_taxi_updates(self):
+        consumer = self.create_consumer('taxi_requests')
+        while True:
+            try:
+                for message in consumer:
+                    if message.topic == 'taxi_updates':
+                        data = message.value
+                        logger.info(f"Received message on topic 'taxi_updates': {data}")
+                        self.update_map(data)
+
+            except KafkaError as e:
+                logger.error(f"Kafka listener error: {e}")
+                self.connect_kafka()  # Reintentar la conexión
+                time.sleep(5)
+            except Exception as e:
+                logger.error(f"General error in kafka_listener_taxi_updates: {e}")
+                time.sleep(5)  # Evitar cierre inmediato
 
     def auto_broadcast_map(self):
         """Envía el estado del mapa solo cuando ha habido cambios."""
@@ -399,9 +403,8 @@ class ECCentral:
         auth_thread.start()
         
         # Iniciar el hilo para escuchar mensajes Kafka
-        kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
-        kafka_thread.start()
-
+        threading.Thread(target=self.kafka_listener_taxi_requests, daemon=True).start()
+        threading.Thread(target=self.kafka_listener_taxi_updates, daemon=True).start()
         # Iniciar el hilo para la visualización del mapa
         map_broadcast_thread = threading.Thread(target=self.auto_broadcast_map, daemon=True)
         map_broadcast_thread.start()
@@ -409,11 +412,11 @@ class ECCentral:
         try:
             # Código de ejecución principal
             while True:
-                time.sleep(1)  # Simular trabajo
+                time.sleep(1)
         except KeyboardInterrupt:
             logger.info("Shutting down...")
         finally:
-            self.close_producer()  # Asegúrate de cerrar el productor al finalizar
+            self.close_producer()
             if self.consumer:
                 self.consumer.close()
                 logger.info("Kafka consumer closed.")

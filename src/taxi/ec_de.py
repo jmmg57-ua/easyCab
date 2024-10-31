@@ -5,6 +5,7 @@ import time
 import json
 import logging
 from kafka import KafkaConsumer, KafkaProducer
+import numpy as np
 
 # Configurar el logger
 logging.basicConfig(level=logging.INFO,
@@ -19,36 +20,49 @@ class DigitalEngine:
         self.ec_s_ip = ec_s_ip
         self.ec_s_port = ec_s_port
         self.taxi_id = taxi_id
+        self.map_size = (20, 20)
+        self.map = np.full(self.map_size, ' ', dtype=str)  # Mapa vacío inicial
         self.status = "FREE"   
         self.color = "RED"     
         self.position = [1, 1]  # Initial position
         self.pickup = None
         self.destination = None
         self.customer_asigned = None
-        
-        # Connect to EC_Central
-        self.central_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.central_socket.connect((self.ec_central_ip, self.ec_central_port))
-        
-        # Set up Kafka producer and consumer
-        self.producer = KafkaProducer(bootstrap_servers=[self.kafka_broker],
-                                      value_serializer=lambda v: json.dumps(v).encode('utf-8'))
-        # Consumidor para taxi_instructions
-        self.instruction_consumer = KafkaConsumer('taxi_instructions',
-                                                   bootstrap_servers=[self.kafka_broker],
-                                                   value_deserializer=lambda v: json.loads(v.decode('utf-8')))
-        
-        # Consumidor para updated_map
-        self.map_consumer = KafkaConsumer('updated_map',
-                                           bootstrap_servers=[self.kafka_broker],
-                                           value_deserializer=lambda v: json.loads(v.decode('utf-8')))
-        
-        # Set up socket for EC_S
+    
+    def connect_to_central(self):
+        try:
+            self.central_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.central_socket.connect((self.ec_central_ip, self.ec_central_port))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to connect to Digital Engine: {e}")
+            return False
+
+    def set_up_socket_sensor(self):
         self.sensor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sensor_socket.bind(('0.0.0.0', self.ec_s_port))
         self.sensor_socket.listen(1)
-        
         logger.info(f"Digital Engine for Taxi {self.taxi_id} initialized")
+
+
+    def connect_kafka(self):
+        try:
+            self.producer = KafkaProducer(
+                bootstrap_servers=self.kafka_broker,
+                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                max_block_ms=5000  # Establecer timeout de 5 segundos para enviar mensajes
+            )
+            self.consumer = KafkaConsumer(
+                'taxi_instructions', 'updated_map',
+                bootstrap_servers=self.kafka_broker,
+                group_id='central_group',
+                value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+            )
+            logger.info("Successfully connected to Kafka")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to connect to Kafka: {e}")
+            return False
 
     def authenticate(self):
         auth_message = f"{self.taxi_id}"
@@ -66,6 +80,7 @@ class DigitalEngine:
         for message in self.consumer:
             instruction = message.value
             if instruction['taxi_id'] == self.taxi_id:
+                logger.info("message recieved in topic 'taxi_instructions'.")
                 self.process_instruction(instruction)
 
     def process_instruction(self, instruction):
@@ -74,7 +89,6 @@ class DigitalEngine:
             self.destination = instruction['destination']
             self.color = "GREEN"
             self.customer_asigned = ['customer_id']
-            self.move_to_destination()
         elif instruction['type'] == 'STOP':
             self.color = "RED"
         elif instruction['type'] == 'RESUME':
@@ -82,23 +96,24 @@ class DigitalEngine:
         elif instruction['type'] == 'RETURN_TO_BASE':
             self.destination = [1, 1]
             self.color = "GREEN"
-            self.move_to_destination()
 
     def move_to_destination(self):
         while self.position != self.pickup and self.color == "GREEN":
-            # Movimiento octogonal hacia el pickup
+            logger.info("Taxi moving towards the pickup location")
             self.move_towards(self.pickup)
 
         while self.position != self.destination and self.color == "GREEN":
-            # Movimiento octogonal hacia el destino
+            logger.info("Taxi moving towards the destination location")
             self.move_towards(self.destination)
 
         if self.position == self.destination:
             self.color = "RED"
             self.status = "END"
+            logger.info("Trip ENDed!!")
             self.send_position_update()
             time.sleep(4)
             self.status = "FREE"
+            logger.info("Taxi is now FREE!!")
             self.send_position_update()
             
     def move_towards(self, target):
@@ -121,6 +136,7 @@ class DigitalEngine:
         time.sleep(1)  # Esperar 1 segundo entre movimientos
 
     def send_position_update(self):
+        
         update = {
             'taxi_id': self.taxi_id,
             'status': self.status,
@@ -128,10 +144,11 @@ class DigitalEngine:
             'position': self.position,
             'customer_id': self.customer_asigned
         }
+        logger.info("Sending update through 'taxi_updates'")
         self.producer.send('taxi_updates', update)
     
     def listen_for_map_updates(self):
-        """Escucha actualizaciones de mapa desde el tópico 'map_updates'."""
+        
         consumer = KafkaConsumer(
             'map_updates',
             bootstrap_servers=[self.kafka_broker],
@@ -142,18 +159,53 @@ class DigitalEngine:
 
         for message in consumer:
             map_data = message.value
-            logger.info(f"Received map update: {map_data}")
+            logger.info(f"Received map update through 'map_updates'")
             self.process_map_update(map_data)  # Procesar y opcionalmente modificar el mapa
 
     def process_map_update(self, map_data):
         """Procesa el mapa recibido, realiza cambios si es necesario y lo envía de vuelta."""
         # (Opcional) Realizar modificaciones en el mapa basado en la posición actual del taxi
-        map_data['map'][self.position[1]][self.position[0]] = str(self.taxi_id)  # Marca la posición actual del taxi
-
-        # Envía el mapa modificado de vuelta al 'EC_Central'
-        self.producer.send('updated_map', map_data)
-        logger.info("Sent updated map back to EC_Central.")
+        self.move_to_destination()
+        #self.draw_map(map_data)
         
+    def draw_map(self, map_data):
+        """Dibuja el mapa recibido de 'Central' en los logs de Docker con delimitación de bordes."""
+        
+        logger.info("Current Map State with Borders:")
+        map_lines = [""]  # Línea vacía para separar en el log
+
+        # Crear el borde superior
+        border_row = "#" * (self.map_size[1] + 2)
+        map_lines.append(border_row)
+
+        # Inicializar un mapa vacío
+        map_array = np.full(self.map_size, ' ', dtype=str)
+
+        # Colocar las ubicaciones en el mapa
+        for loc_id, location in map_data['locations'].items():
+            x, y = location['position']
+            map_array[y, x] = loc_id  # ID de la ubicación
+
+        # Colocar los taxis en el mapa (excluyendo el taxi actual en la posición original)
+        for taxi_id, taxi_info in map_data['taxis'].items():
+            x, y = taxi_info['position']
+            if taxi_id != str(self.taxi_id):  # Solo dibujar otros taxis
+                map_array[y, x] = str(taxi_id)  # ID del taxi
+        
+        # Colocar el taxi actual en su nueva posición
+        new_x, new_y = self.position
+        map_array[new_y, new_x] = str(self.taxi_id)  # Usar el ID del taxi actual
+
+        # Agregar delimitadores laterales y formar cada línea
+        for row in map_array:
+            map_lines.append("#" + "".join(row) + "#")
+
+        # Agregar el borde inferior
+        map_lines.append(border_row)
+
+        # Unir las líneas y registrar en el log
+        logger.info("\n".join(map_lines))
+
 
     def listen_for_sensor_data(self, conn, addr):
         logger.info(f"Connected to Sensors at {addr}")
@@ -167,18 +219,24 @@ class DigitalEngine:
                 self.send_position_update()
 
     def run(self):
-        logger.info("Waiting for sensor connection...")
-        conn, addr = self.sensor_socket.accept()
+        if not self.connect_kafka():
+            return
         
-        threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
+        #self.set_up_socket_sensor()
+        #logger.info("Waiting for sensor connection...")
+        #conn, addr = self.sensor_socket.accept()
+        
+        self.connect_to_central()
         
         if not self.authenticate():
             return
-        
+
         logger.info("Digital Engine is running...")
         
         kafka_thread = threading.Thread(target=self.listen_for_instructions, daemon=True)
         kafka_thread.start()
+        
+        #threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
         
         # Crear hilo para escuchar actualizaciones del mapa
         map_update_thread = threading.Thread(target=self.listen_for_map_updates, daemon=True)
