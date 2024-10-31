@@ -3,7 +3,7 @@ import logging
 import socket
 import sys
 from kafka import KafkaConsumer, KafkaProducer
-from kafka.errors import KafkaError  # Asegúrate de importar KafkaError
+from kafka.errors import KafkaError  
 import json
 import numpy as np
 from dataclasses import dataclass
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Taxi:
     id: int
-    status: str  # 'FREE', 'BUSY', 'END'
-    color: str  # 'RED' (parado) o 'GREEN' (en movimiento)
+    status: str  
+    color: str  
     position: Tuple[int, int]
     customer_asigned: str
     picked_off: int
@@ -27,7 +27,7 @@ class Taxi:
 class Location:
     id: str
     position: Tuple[int, int]
-    color: str # 'BLUE' (localización) o 'YELLOW' (cliente)
+    color: str 
 
 class ECCentral:
     def __init__(self, kafka_bootstrap_servers, listen_port):
@@ -38,17 +38,17 @@ class ECCentral:
         self.map_size = (20, 20)
         self.map = np.full(self.map_size, ' ', dtype=str)
         self.locations: Dict[str, Location] = {}
-        self.taxis_file = '/data/taxis.txt'  # Ruta al fichero de taxis
-        self.taxis = {}  # Guardar taxis en un atributo
+        self.taxis_file = '/data/taxis.txt'  
+        self.taxis = {}  
         self.locations = {}
-        self.map_changed = False  # Estado para detectar cambios en el mapa
+        self.map_changed = False  
         self.setup_kafka()
 
     def setup_kafka(self):
         retry_count = 0
         while retry_count < 5:
             try:
-                # Set up Kafka Producer
+                
                 self.producer = KafkaProducer(
                     bootstrap_servers=[self.kafka_bootstrap_servers],
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
@@ -56,7 +56,7 @@ class ECCentral:
                 )
                 logger.info("Kafka producer set up successfully")
 
-                # Set up Kafka Consumer for responses
+               
                 self.consumer = KafkaConsumer(
                     'taxi_updates','taxi_requests',
                     bootstrap_servers=[self.kafka_bootstrap_servers],
@@ -127,7 +127,6 @@ class ECCentral:
             taxi_id = int(data.strip())
             logger.info(f"Authenticating taxi with ID: {taxi_id}")
             
-            # Aquí puedes implementar la lógica de autenticación
             taxis = self.load_taxis()
             if taxi_id in taxis:
                 conn.sendall(b"OK")
@@ -158,12 +157,10 @@ class ECCentral:
     
     def update_map(self, update):
         try:
-            # Verificar que las claves esperadas estén presentes
             if not all(key in update for key in ['taxi_id', 'position', 'status', 'color', 'customer_id']):
                 logger.error("Update message missing required fields.")
                 return
 
-            # Extraer y validar la posición
             taxi_id = update['taxi_id']
             position = update['position']
             
@@ -173,18 +170,14 @@ class ECCentral:
                 logger.error(f"Invalid position format for taxi_id {taxi_id}: {position}")
                 return
             
-            # Asignar los demás valores
             status = update['status']
             color = update['color']
             customer_asigned = update['customer_id']
             picked_off = update['picked_off']
-            # Actualizar el estado del taxi
             taxi_updated = self.update_taxi_state(taxi_id, pos_x, pos_y, status, color, customer_asigned, picked_off)
             logger.info(f"taxi_id = {taxi_updated.id}, tiene de customer a {taxi_updated.customer_asigned}")
-            # Finalizar viaje y notificar al cliente, si es necesario
             self.finalize_trip_if_needed(taxi_updated)
 
-            # Redibujar y emitir el mapa actualizado
             self.redraw_map_and_broadcast()
         
         except KeyError as e:
@@ -202,7 +195,7 @@ class ECCentral:
             taxi.color = color
             taxi.customer_asigned = customer_asigned
             taxi.picked_off = picked_off
-            self.map_changed = True  # Marcar como cambiado
+            self.map_changed = True  
             self.save_taxis(self.taxis)
             if picked_off==1:
                 self.locations[customer_asigned].position = taxi.position 
@@ -226,34 +219,25 @@ class ECCentral:
     def draw_map(self):
         """Dibuja el mapa en los logs con delimitación de bordes, donde (0,0) no se representa."""
         logger.info("Current Map State with Borders:")
-        map_lines = [""]  # Agrega una línea vacía al inicio
+        map_lines = [""] 
 
-        # Crear el borde superior
         border_row = "#" * (self.map_size[1] + 2)
         map_lines.append(border_row)
 
-        # Limpiar el mapa primero
-        # Crear un nuevo mapa de tamaño (map_size[0] + 1, map_size[1] + 1) para incluir el borde
         bordered_map = np.full((self.map_size[0] + 1, self.map_size[1] + 1), ' ', dtype=str)
 
-        # Colocar las ubicaciones en el mapa
         for location in self.locations.values():
             x, y = location.position
-            bordered_map[y - 1, x - 1] = location.id  # Ajustar posición para que empiece en (1,1)
-
-        # Colocar los taxis en el mapa
+            bordered_map[y - 1, x - 1] = location.id 
         for taxi in self.taxis.values():
             x, y = taxi.position
-            bordered_map[y - 1, x - 1] = str(taxi.id)  # Ajustar posición para que empiece en (1,1)
+            bordered_map[y - 1, x - 1] = str(taxi.id)  
 
-        # Crear cada fila con delimitadores laterales
         for row in bordered_map:
             map_lines.append("#" + "".join(row) + "#")
 
-        # Agregar el borde inferior
         map_lines.append(border_row)
         
-        # Unir las líneas y registrarlas
         logger.info("\n".join(map_lines))
 
 
@@ -281,23 +265,19 @@ class ECCentral:
         destination = request['destination']
         customer_location = request['customer_location']
 
-        # Verifica si la ubicación del cliente es válida
         if customer_location:
-            # Convierte la ubicación del cliente a tupla para evitar el error de tipo 'unhashable'
             location_key = tuple(customer_location)
             self.locations[customer_id] = Location(customer_id, location_key, 'YELLOW')
-            self.map_changed = True  # Marcar como cambiado
+            self.map_changed = True  
 
-        # Validación de la ubicación de destino
         if destination not in self.locations:
             logger.error(f"Invalid destination: {destination}")
             return False
 
-        # Selección y asignación del taxi
         available_taxi = self.select_available_taxi()
         if available_taxi:
             self.assign_taxi_to_customer(available_taxi, customer_id, location_key, destination)
-            self.map_changed = True  # Marcar como cambiado
+            self.map_changed = True  
             return True
         else:
             logger.warning("No available taxis")
@@ -306,7 +286,7 @@ class ECCentral:
 
     def select_available_taxi(self):
         """Selecciona el primer taxi disponible con estado 'FREE'."""
-        self.taxis = self.load_taxis()  # Asegurarse de cargar el último estado de los taxis
+        self.taxis = self.load_taxis() 
         return next((taxi for taxi in self.taxis.values() if taxi.status == 'FREE'), None)
 
     def assign_taxi_to_customer(self, taxi, customer_id, customer_location, destination):
@@ -315,7 +295,6 @@ class ECCentral:
         taxi.color = 'GREEN'
         taxi.customer_asigned = customer_id
 
-        # Guarda el nuevo estado del taxi en el archivo y envía instrucciones
         self.save_taxis(self.taxis)
         self.notify_customer_assignment(customer_id, taxi)
         self.send_taxi_instruction(taxi, customer_id, customer_location, destination)
@@ -366,11 +345,11 @@ class ECCentral:
 
             except KafkaError as e:
                 logger.error(f"Kafka listener error: {e}")
-                self.setup_kafka()  # Reintentar la conexión
+                self.setup_kafka() 
                 time.sleep(5)
             except Exception as e:
                 logger.error(f"General error in kafka_listener: {e} {message.topic}")
-                time.sleep(5)  # Evitar cierre inmediato
+                time.sleep(5) 
 
     def auto_broadcast_map(self):
         """Envía el estado del mapa solo cuando ha habido cambios."""
@@ -378,21 +357,20 @@ class ECCentral:
             if self.map_changed:
 
                 self.broadcast_map()
-                self.map_changed = False  # Restablecer el indicador después de transmitir
-            time.sleep(1)  # Espera 1 segundo antes de verificar nuevamente
+                self.map_changed = False  
+            time.sleep(1)  
 
 
     def start_server_socket(self):
         """Configura el servidor de sockets y maneja la autenticación de taxis en un hilo separado."""
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind(('0.0.0.0', self.listen_port))
-        self.server_socket.listen(5)  # Permitir hasta 5 conexiones en espera
+        self.server_socket.listen(5)  
         logger.info(f"Listening for taxi connections on port {self.listen_port}...")
 
         try:
             while True:
                 conn, addr = self.server_socket.accept()
-                # Crear un hilo para manejar la autenticación del taxi
                 threading.Thread(target=self.handle_taxi_auth, args=(conn, addr), daemon=True).start()
         except Exception as e:
             logger.error(f"Error in start_server_socket: {e}")
@@ -404,8 +382,7 @@ class ECCentral:
         """Cierra el productor de Kafka con timeout."""
         if self.producer:
             try:
-                # Forzar el cierre del productor con un timeout
-                self.producer.close(timeout=5.0)  # 5 segundos para cerrar
+                self.producer.close(timeout=5.0)  
                 logger.info("Kafka producer closed successfully.")
             except KafkaError as e:
                 logger.error(f"Error closing Kafka producer: {e}")
@@ -418,22 +395,18 @@ class ECCentral:
         self.load_taxis()
         logger.info("EC_Central is running...")
         
-        self.draw_map()  # Dibujar el mapa inicial
+        self.draw_map()  
 
 
-        # Iniciar el servidor de autenticación de taxis en un hilo separado
         auth_thread = threading.Thread(target=self.start_server_socket, daemon=True)
         auth_thread.start()
         
-        # Iniciar el hilo para escuchar mensajes Kafka
         threading.Thread(target=self.kafka_listener, daemon=True).start()
         
-        # Iniciar el hilo para la visualización del mapa
         map_broadcast_thread = threading.Thread(target=self.auto_broadcast_map, daemon=True)
         map_broadcast_thread.start()
         
         try:
-            # Código de ejecución principal
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
