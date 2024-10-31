@@ -12,9 +12,9 @@ class Customer:
         self.services_file = services_file
         self.producer = None
         self.consumer = None
-        self.customer_location = [int(coord) for coord in customer_location.split(',')]  # Almacena como lista
+        self.customer_location = [int(coord) for coord in customer_location.split(',')]  
         
-        # Set up logging
+       
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - Customer %(message)s')
         self.logger = logging.getLogger(__name__)
         
@@ -24,7 +24,6 @@ class Customer:
         retry_count = 0
         while retry_count < 5:
             try:
-                # Set up Kafka Producer
                 self.producer = KafkaProducer(
                     bootstrap_servers=[self.kafka_broker],
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
@@ -32,12 +31,11 @@ class Customer:
                 )
                 self.logger.info("Kafka producer set up successfully")
 
-                # Set up Kafka Consumer for responses
                 self.consumer = KafkaConsumer(
                     'taxi_responses',
                     bootstrap_servers=[self.kafka_broker],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-                    group_id=f'customer_{self.customer_id}',  # Unique group ID for this customer
+                    group_id=f'customer_{self.customer_id}', 
                     auto_offset_reset='earliest'
                 )
                 self.logger.info("Kafka consumer set up successfully")
@@ -63,7 +61,7 @@ class Customer:
         request = {
             'customer_id': self.customer_id,
             'destination': destination,
-            'customer_location': self.customer_location      #Añadida la localización del cliente al mensaje del request
+            'customer_location': self.customer_location     
         }
         try:
             self.producer.send('taxi_requests', request)
@@ -92,19 +90,16 @@ class Customer:
         """Espera hasta recibir una confirmación de finalización en 'taxi_responses'."""
         self.logger.info("Waiting for service completion confirmation...")
 
-        # Escuchar indefinidamente hasta que el servicio se complete
         for message in self.consumer:
             response = message.value
             
             self.logger.info(f"Received response: {response}")
             
-            # Comprobar si la respuesta es para este cliente y el servicio ha finalizado
             if response.get('customer_id') == self.customer_id and response.get('status') == "END":
                 self.customer_location = response.get('final_position')
                 self.logger.info("Service completed.")
-                return True  # El servicio ha finalizado correctamente
+                return True  
             
-        # Si el bucle se rompe inesperadamente (por manejo de excepciones externas)
         self.logger.warning("Listener stopped unexpectedly.")
         return False
 
