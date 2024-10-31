@@ -5,10 +5,9 @@ import time
 import json
 import logging
 from kafka import KafkaConsumer, KafkaProducer
-from kafka.errors import KafkaError  # Asegúrate de importar KafkaError
+from kafka.errors import KafkaError  
 import numpy as np
 
-# Configurar el logger
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
@@ -22,10 +21,10 @@ class DigitalEngine:
         self.ec_s_port = ec_s_port
         self.taxi_id = taxi_id
         self.map_size = (20, 20)
-        self.map = np.full(self.map_size, ' ', dtype=str)  # Mapa vacío inicial
+        self.map = np.full(self.map_size, ' ', dtype=str) 
         self.status = "FREE"   
         self.color = "RED"     
-        self.position = [1, 1]  # Initial position
+        self.position = [1, 1]  
         self.pickup = None
         self.destination = None
         self.customer_asigned = None
@@ -36,7 +35,6 @@ class DigitalEngine:
         retry_count = 0
         while retry_count < 5:
             try:
-                # Set up Kafka Producer
                 self.producer = KafkaProducer(
                     bootstrap_servers=[self.kafka_broker],
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
@@ -44,7 +42,6 @@ class DigitalEngine:
                 )
                 logger.info("Kafka producer set up successfully")
 
-                # Set up Kafka Consumer for responses
                 self.consumer = KafkaConsumer(
                     'taxi_instructions','map_updates',
                     bootstrap_servers=[self.kafka_broker],
@@ -97,11 +94,9 @@ class DigitalEngine:
                     if message.topic == 'taxi_instructions':
                         data = message.value
                         logger.info(f"Received message on topic 'taxi_instructions': {data}")
-                        # Verificar si 'taxi_id' está en la instrucción
                         if 'taxi_id' not in data:
                             logger.warning("Received instruction does not contain 'taxi_id'. Skipping.")
-                            continue  # Salir de este ciclo y esperar la siguiente instrucción
-
+                            continue  
                         if data['taxi_id'] == self.taxi_id:
                             logger.info("Message received in topic 'taxi_instructions'.")
                             self.process_instruction(data)
@@ -113,11 +108,11 @@ class DigitalEngine:
 
             except KafkaError as e:
                 logger.error(f"Kafka listener error: {e}")
-                self.setup_kafka()  # Reintentar la conexión
+                self.setup_kafka()  
                 time.sleep(5)
             except Exception as e:
                 logger.error(f"General error in kafka_listener: {e} {message.topic}")
-                time.sleep(5)  # Evitar cierre inmediato
+                time.sleep(5)  
 
     def process_instruction(self, instruction):
         if instruction['type'] == 'MOVE':
@@ -161,7 +156,6 @@ class DigitalEngine:
             self.send_position_update()
             
     def move_towards(self, target):
-        # Movimiento octogonal con ajuste de límites
         if self.position[0] < target[0]:
             self.position[0] += 1
         elif self.position[0] > target[0]:
@@ -172,12 +166,11 @@ class DigitalEngine:
         elif self.position[1] > target[1]:
             self.position[1] -= 1
 
-        # Manejo de límites (wrap-around)
-        self.position[0] = self.position[0] % 20  # Mantener en el rango [0, 19]
-        self.position[1] = self.position[1] % 20  # Mantener en el rango [0, 19]
+        self.position[0] = self.position[0] % 20
+        self.position[1] = self.position[1] % 20  
         
         self.send_position_update()
-        time.sleep(1)  # Esperar 1 segundo entre movimientos
+        time.sleep(1)  
 
     def send_position_update(self):
         
@@ -190,7 +183,6 @@ class DigitalEngine:
             'picked_off': self.picked_off
         }
         logger.info("Sending update through 'taxi_updates'")
-        # Serializar el diccionario `update` a JSON antes de enviarlo
         self.producer.send('taxi_updates', update)
         
     def listen_for_map_updates(self):
@@ -206,50 +198,36 @@ class DigitalEngine:
         for message in consumer:
             map_data = message.value
             logger.info(f"Received map update through 'map_updates'")
-            self.process_map_update(map_data)  # Procesar y opcionalmente modificar el mapa
-
-    def process_map_update(self, map_data):
-        """Procesa el mapa recibido, realiza cambios si es necesario y lo envía de vuelta."""
-        # (Opcional) Realizar modificaciones en el mapa basado en la posición actual del taxi
-        #self.move_to_destination()
-        #self.draw_map(map_data)
+            self.process_map_update(map_data) 
         
     def draw_map(self, map_data):
         """Dibuja el mapa recibido de 'Central' en los logs de Docker con delimitación de bordes."""
         
         logger.info("Current Map State with Borders:")
-        map_lines = [""]  # Línea vacía para separar en el log
+        map_lines = [""]  
 
-        # Crear el borde superior
         border_row = "#" * (self.map_size[1] + 2)
         map_lines.append(border_row)
 
-        # Inicializar un mapa vacío
         map_array = np.full(self.map_size, ' ', dtype=str)
 
-        # Colocar las ubicaciones en el mapa
         for loc_id, location in map_data['locations'].items():
             x, y = location['position']
-            map_array[y, x] = loc_id  # ID de la ubicación
+            map_array[y, x] = loc_id  
 
-        # Colocar los taxis en el mapa (excluyendo el taxi actual en la posición original)
         for taxi_id, taxi_info in map_data['taxis'].items():
             x, y = taxi_info['position']
-            if taxi_id != str(self.taxi_id):  # Solo dibujar otros taxis
-                map_array[y, x] = str(taxi_id)  # ID del taxi
+            if taxi_id != str(self.taxi_id):  
+                map_array[y, x] = str(taxi_id)  
         
-        # Colocar el taxi actual en su nueva posición
         new_x, new_y = self.position
-        map_array[new_y, new_x] = str(self.taxi_id)  # Usar el ID del taxi actual
+        map_array[new_y, new_x] = str(self.taxi_id)  
 
-        # Agregar delimitadores laterales y formar cada línea
         for row in map_array:
             map_lines.append("#" + "".join(row) + "#")
 
-        # Agregar el borde inferior
         map_lines.append(border_row)
 
-        # Unir las líneas y registrar en el log
         logger.info("\n".join(map_lines))
 
 
@@ -277,15 +255,12 @@ class DigitalEngine:
 
         logger.info("Digital Engine is running...")
         
-        # Iniciar el hilo para escuchar mensajes Kafka
         threading.Thread(target=self.kafka_listener, daemon=True).start()
         threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
         
-        # Crear hilo para escuchar actualizaciones del mapa
         map_update_thread = threading.Thread(target=self.listen_for_map_updates, daemon=True)
         map_update_thread.start()
         
-        # Mantener el hilo principal activo
         while True:
             time.sleep(1)
 
