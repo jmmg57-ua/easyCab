@@ -78,6 +78,45 @@ services:
     command: >
       python ec_de.py central 8000 kafka:9092 sensor2 9002 2
 
+  dengine3:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_de
+    ports:
+      - "9003:9003"
+    depends_on:
+      - kafka
+      - central
+    #Cambiar en command kafka por la ip y port del host de kafka
+    command: >
+      python ec_de.py central 8000 kafka:9092 sensor3 9003 3
+
+  dengine4:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_de
+    ports:
+      - "9004:9004"
+    depends_on:
+      - kafka
+      - central
+    #Cambiar en command kafka por la ip y port del host de kafka
+    command: >
+      python ec_de.py central 8000 kafka:9092 sensor4 9004 4
+
+  dengine5:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_de
+    ports:
+      - "9005:9005"
+    depends_on:
+      - kafka
+      - central
+    #Cambiar en command kafka por la ip y port del host de kafka
+    command: >
+      python ec_de.py central 8000 kafka:9092 sensor5 9005 5
+
 
   sensor1:
     build:
@@ -96,6 +135,35 @@ services:
       - dengine2
     command: >
       python ec_s.py dengine2 9002
+
+  sensor3:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_s
+    depends_on:
+      - dengine3
+    command: >
+      python ec_s.py dengine3 9003
+
+  sensor4:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_s
+    depends_on:
+      - dengine4
+    command: >
+      python ec_s.py dengine4 9004
+
+  sensor5:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_s
+    depends_on:
+      - dengine5
+    command: >
+      python ec_s.py dengine5 9005
+
+
 
 
   customer1:
@@ -118,4 +186,38 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 b /data/services.txt 4,10
+      python ec_customer.py kafka:9092 b /data/services.txt 5,19
+
+  customer3:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_customer
+    depends_on:
+      - kafka
+    volumes:
+      - ./data:/data 
+    command: >
+      python ec_customer.py kafka:9092 c /data/services.txt 20,1
+
+  customer4:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_customer
+    depends_on:
+      - kafka
+    volumes:
+      - ./data:/data 
+    command: >
+      python ec_customer.py kafka:9092 d /data/services.txt 1,20
+
+  customer5:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_customer
+    depends_on:
+      - kafka
+    volumes:
+      - ./data:/data 
+    command: >
+      python ec_customer.py kafka:9092 e /data/services.txt 19,19
+

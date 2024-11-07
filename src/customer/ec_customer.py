@@ -92,10 +92,8 @@ class Customer:
 
         for message in self.consumer:
             response = message.value
-            
-            self.logger.info(f"Received response: {response}")
-            
             if response.get('customer_id') == self.customer_id and response.get('status') == "END":
+                self.logger.info(f"Received response: {response}")
                 self.customer_location = response.get('final_position')
                 self.logger.info("Service completed.")
                 return True  

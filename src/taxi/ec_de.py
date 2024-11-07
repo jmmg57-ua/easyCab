@@ -27,7 +27,7 @@ class DigitalEngine:
         self.position = [1, 1]  
         self.pickup = None
         self.destination = None
-        self.customer_asigned = None
+        self.customer_asigned = "x"
         self.picked_off = 0
         self.setup_kafka()
 
@@ -120,6 +120,7 @@ class DigitalEngine:
             logger.info(f'PICK UP LOCATION = {self.pickup}')
             self.destination = instruction['destination']
             logger.info(f'DESTINATION LOCATION = {self.destination}')
+            self.status = "BUSY"
             self.color = "GREEN"
             self.customer_asigned = instruction['customer_id']
             logger.info(f'ASIGNED CUSTOMER = {self.customer_asigned}')
@@ -149,10 +150,12 @@ class DigitalEngine:
             self.status = "END"
             logger.info("Trip ENDed!!")
             self.send_position_update()
+            
+            self.customer_asigned = "x"
             time.sleep(4)
-            self.status = "FREE"
             self.picked_off = 0
-            logger.info("Taxi is now FREE!!")
+            self.status = "FREE"
+            logger.info("Taxi is now FREE")
             self.send_position_update()
             
     def move_towards(self, target):
@@ -166,8 +169,8 @@ class DigitalEngine:
         elif self.position[1] > target[1]:
             self.position[1] -= 1
 
-        self.position[0] = self.position[0] % 20
-        self.position[1] = self.position[1] % 20  
+        self.position[0] = self.position[0] % 21
+        self.position[1] = self.position[1] % 21  
         
         self.send_position_update()
         time.sleep(1)  
@@ -203,8 +206,7 @@ class DigitalEngine:
     def process_map_update(self, map_data):
         """Procesa el mapa recibido, realiza cambios si es necesario y lo envía de vuelta."""
         # (Opcional) Realizar modificaciones en el mapa basado en la posición actual del taxi
-        #self.move_to_destination()
-        #self.draw_map(map_data)
+        #self.draw_map(map_data) no ha dado tiempo a implementarlo
         
     def draw_map(self, map_data):
         """Dibuja el mapa recibido de 'Central' en los logs de Docker con delimitación de bordes."""
@@ -241,10 +243,10 @@ class DigitalEngine:
         logger.info(f"Connected to Sensors at {addr}")
         while True:
             data = conn.recv(1024).decode()
-            if data == "KO":
+            if data == "KO" and self.color == "GREEN" and self.customer_asigned != "x":
                 self.color = "RED"
                 self.send_position_update()
-            elif data == "OK" and self.color == "RED":
+            elif data == "OK" and self.color == "RED" and self.customer_asigned != "x":
                 self.color = "GREEN"
                 self.send_position_update()
 

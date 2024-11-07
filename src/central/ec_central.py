@@ -275,7 +275,7 @@ class ECCentral:
             return False
 
         available_taxi = self.select_available_taxi()
-        if available_taxi:
+        if available_taxi and available_taxi.status == "FREE":
             self.assign_taxi_to_customer(available_taxi, customer_id, location_key, destination)
             self.map_changed = True  
             return True
@@ -286,8 +286,23 @@ class ECCentral:
 
     def select_available_taxi(self):
         """Selecciona el primer taxi disponible con estado 'FREE'."""
-        self.taxis = self.load_taxis() 
-        return next((taxi for taxi in self.taxis.values() if taxi.status == 'FREE'), None)
+        self.taxis = self.load_taxis()
+
+        # Log para comprobar el estado de todos los taxis antes de seleccionar
+        for taxi_id, taxi in self.taxis.items():
+            logger.info(f"Taxi {taxi_id} - Estado: {taxi.status}, Posición: {taxi.position}, Cliente asignado: {taxi.customer_asigned}")
+
+        # Selección del primer taxi disponible
+        available_taxi = next((taxi for taxi in self.taxis.values() if taxi.status == 'FREE' and taxi.customer_asigned == "x"), None)
+
+        # Log adicional para saber si se encontró un taxi disponible
+        if available_taxi:
+            logger.info(f"Taxi disponible encontrado: {available_taxi.id}")
+        else:
+            logger.warning("No se encontró ningún taxi disponible.")
+
+        return available_taxi
+
 
     def assign_taxi_to_customer(self, taxi, customer_id, customer_location, destination):
         """Asigna el taxi al cliente y envía instrucciones."""
