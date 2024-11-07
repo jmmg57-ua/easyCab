@@ -199,6 +199,12 @@ class DigitalEngine:
             map_data = message.value
             logger.info(f"Received map update through 'map_updates'")
             self.process_map_update(map_data) 
+
+    def process_map_update(self, map_data):
+        """Procesa el mapa recibido, realiza cambios si es necesario y lo envía de vuelta."""
+        # (Opcional) Realizar modificaciones en el mapa basado en la posición actual del taxi
+        #self.move_to_destination()
+        #self.draw_map(map_data)
         
     def draw_map(self, map_data):
         """Dibuja el mapa recibido de 'Central' en los logs de Docker con delimitación de bordes."""
