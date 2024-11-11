@@ -144,3 +144,4 @@ if __name__ == "__main__":
 
     customer = Customer(kafka_broker, customer_id, services_file, customer_location)
     customer.run()
+

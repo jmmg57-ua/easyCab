@@ -345,3 +345,4 @@ if __name__ == "__main__":
     
     digital_engine = DigitalEngine(ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id)
     digital_engine.run()
+

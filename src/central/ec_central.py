@@ -219,28 +219,40 @@ class ECCentral:
     def draw_map(self):
         """Dibuja el mapa en los logs con delimitación de bordes, donde (0,0) no se representa."""
         logger.info("Current Map State with Borders:")
-        map_lines = [""] 
+        map_lines = [""]
 
-        border_row = "#" * (self.map_size[1] + 2)
+        # Ajuste del borde superior e inferior
+        border_row = "#" * (self.map_size[1] * 2 + 2)  # Duplicamos el ancho para una apariencia cuadrada
         map_lines.append(border_row)
 
-        bordered_map = np.full((self.map_size[0] + 1, self.map_size[1] + 1), ' ', dtype=str)
+        # Crear un mapa con bordes y celdas vacías
+        bordered_map = np.full((self.map_size[0], self.map_size[1]), ' ', dtype=str)
 
+        # Colocar las localizaciones en el mapa
         for location in self.locations.values():
             x, y = location.position
-            bordered_map[y - 1, x - 1] = location.id 
+            bordered_map[y - 1, x - 1] = location.id
+
+        # Colocar los taxis en el mapa
         for taxi in self.taxis.values():
             x, y = taxi.position
-            bordered_map[y - 1, x - 1] = str(taxi.id)  
+            bordered_map[y - 1, x - 1] = str(taxi.id)
 
+        # Dibujar cada fila del mapa con espacio adicional para cuadrar
         for row in bordered_map:
-            map_lines.append("#" + "".join(row) + "#")
+            formatted_row = "#"
+            for cell in row:
+                if cell == ' ':
+                    formatted_row += "  "  # Dos espacios para uniformidad
+                else:
+                    formatted_row += f"{cell} "  # Elemento con espacio adicional
+            formatted_row += "#"
+            map_lines.append(formatted_row)
 
-        map_lines.append(border_row)
-        
+        map_lines.append(border_row)  # Borde inferior
+
+        # Imprimir el mapa completo
         logger.info("\n".join(map_lines))
-
-
 
     def broadcast_map(self):
         """
@@ -461,3 +473,4 @@ if __name__ == "__main__":
     listen_port = int(sys.argv[2])
     central = ECCentral(kafka_bootstrap_servers, listen_port)
     central.run()
+
