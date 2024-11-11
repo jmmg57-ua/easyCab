@@ -127,7 +127,6 @@ class ECCentral:
             taxi_id = int(data.strip())
             logger.info(f"Authenticating taxi with ID: {taxi_id}")
             
-
             taxis = self.load_taxis()
             if taxi_id in taxis:
                 conn.sendall(b"OK")
@@ -220,35 +219,45 @@ class ECCentral:
     def draw_map(self):
         """Dibuja el mapa en los logs con delimitación de bordes, donde (0,0) no se representa."""
         logger.info("Current Map State with Borders:")
-        map_lines = [""] 
+        map_lines = [""]
 
-        border_row = "#" * (self.map_size[1] + 2)
+        # Ajuste del borde superior e inferior
+        border_row = "#" * (self.map_size[1] * 2 + 2)  # Duplicamos el ancho para una apariencia cuadrada
         map_lines.append(border_row)
 
-        bordered_map = np.full((self.map_size[0] + 1, self.map_size[1] + 1), ' ', dtype=str)
+        # Crear un mapa con bordes y celdas vacías
+        bordered_map = np.full((self.map_size[0], self.map_size[1]), ' ', dtype=str)
 
+        # Colocar las localizaciones en el mapa
         for location in self.locations.values():
             x, y = location.position
-            bordered_map[y - 1, x - 1] = location.id 
+            bordered_map[y - 1, x - 1] = location.id
+
+        # Colocar los taxis en el mapa
         for taxi in self.taxis.values():
-
             x, y = taxi.position
-            bordered_map[y - 1, x - 1] = str(taxi.id)  
+            bordered_map[y - 1, x - 1] = str(taxi.id)
 
+        # Dibujar cada fila del mapa con espacio adicional para cuadrar
         for row in bordered_map:
-            map_lines.append("#" + "".join(row) + "#")
+            formatted_row = "#"
+            for cell in row:
+                if cell == ' ':
+                    formatted_row += "  "  # Dos espacios para uniformidad
+                else:
+                    formatted_row += f"{cell} "  # Elemento con espacio adicional
+            formatted_row += "#"
+            map_lines.append(formatted_row)
 
-        map_lines.append(border_row)
-        
+        map_lines.append(border_row)  # Borde inferior
+
+        # Imprimir el mapa completo
         logger.info("\n".join(map_lines))
-
-
 
     def broadcast_map(self):
         """
         Envía el estado actual del mapa a todos los taxis a través del tópico 'map_updates'.
         """
-
         if self.producer:
             try:
                 map_data = {
@@ -258,7 +267,6 @@ class ECCentral:
                     'locations': {k: {'position': v.position, 'color': v.color}
                                     for k, v in self.locations.items()}
                 }
-                logger.info(f"Broadcasting map data: {json.dumps(map_data, indent=2)}")
                 self.producer.send('map_updates', map_data)
                 logger.info("Broadcasted map to all taxis")
             except KafkaError as e:
@@ -277,19 +285,13 @@ class ECCentral:
         if destination not in self.locations:
             logger.error(f"Invalid destination: {destination}")
             return False
-          
+
         available_taxi = self.select_available_taxi()
         if available_taxi and available_taxi.status == "FREE":
             self.assign_taxi_to_customer(available_taxi, customer_id, location_key, destination)
             self.map_changed = True  
-
             return True
         else:
-            response = {
-                'customer_id': customer_id,
-                'status': "KO",
-                'assigned_taxi': 0
-            }
             logger.warning("No available taxis")
             return False
 
@@ -441,6 +443,8 @@ class ECCentral:
             if self.consumer:
                 self.consumer.close()
                 logger.info("Kafka consumer closed.")
+
+
             
 if __name__ == "__main__":
     if len(sys.argv) < 3:
@@ -451,3 +455,4 @@ if __name__ == "__main__":
     listen_port = int(sys.argv[2])
     central = ECCentral(kafka_bootstrap_servers, listen_port)
     central.run()
+
