@@ -29,6 +29,7 @@ class DigitalEngine:
         self.destination = None
         self.customer_asigned = "x"
         self.picked_off = 0
+        self.sensor_connected = False  # Estado inicial de conexión del sensor
         self.setup_kafka()
 
     def setup_kafka(self):
@@ -134,21 +135,21 @@ class DigitalEngine:
             self.color = "GREEN"
 
     def move_to_destination(self):
-        while self.position != self.pickup and self.color == "GREEN":
+        while self.position != self.pickup and self.color == "GREEN" and self.sensor_connected and self.picked_off == 0:
             logger.info("Taxi moving towards the pickup location")
             self.move_towards(self.pickup)
 
         if self.position == self.pickup:
             self.picked_off = 1
-        
-        while self.position != self.destination and self.color == "GREEN":
+
+        while self.position != self.destination and self.color == "GREEN" and self.sensor_connected:
             logger.info("Taxi moving towards the destination location")
             self.move_towards(self.destination)
 
         if self.position == self.destination:
             self.color = "RED"
             self.status = "END"
-            logger.info("Trip ENDed!!")
+            logger.info("Trip ENDED!!")
             self.send_position_update()
             
             self.customer_asigned = "x"
@@ -157,6 +158,7 @@ class DigitalEngine:
             self.status = "FREE"
             logger.info("Taxi is now FREE")
             self.send_position_update()
+
             
     def move_towards(self, target):
         if self.position[0] < target[0]:
@@ -176,17 +178,23 @@ class DigitalEngine:
         time.sleep(1)  
 
     def send_position_update(self):
-        
-        update = {
-            'taxi_id': self.taxi_id,
-            'status': self.status,
-            'color': self.color,
-            'position': self.position,
-            'customer_id': self.customer_asigned,
-            'picked_off': self.picked_off
-        }
-        logger.info("Sending update through 'taxi_updates'")
-        self.producer.send('taxi_updates', update)
+        # Verificar si el socket está abierto antes de enviar
+        if self.sensor_socket and self.sensor_socket.fileno() != -1:
+            update = {
+                'taxi_id': self.taxi_id,
+                'status': self.status,
+                'color': self.color,
+                'position': self.position,
+                'customer_id': self.customer_asigned,
+                'picked_off': self.picked_off
+            }
+            logger.info("Sending update through 'taxi_updates'")
+            try:
+                self.producer.send('taxi_updates', update)
+            except KafkaError as e:
+                logger.error(f"Error sending update: {e}")
+        else:
+            logger.warning("Socket is closed, cannot send update.")
         
     def listen_for_map_updates(self):
         
@@ -238,17 +246,66 @@ class DigitalEngine:
 
         logger.info("\n".join(map_lines))
 
+    def handle_sensor_disconnection(self):
+        self.sensor_connected = False
+        update = {
+                'taxi_id': self.taxi_id,
+                'status': "ERROR",
+                'color': "RED",
+                'position': self.position,
+                'customer_id': self.customer_asigned,
+                'picked_off': self.picked_off
+            }
+        logger.info("Sending update through 'taxi_updates'")
+        try:
+            self.producer.send('taxi_updates', update)
+        except KafkaError as e:
+            logger.error(f"Error sending update: {e}")
 
+        logger.warning("Sensor disconnected. Taxi stopped, waiting for reconnection...")
+
+    def handle_sensor_reconnection(self):
+        self.sensor_connected = True  # Marca el sensor como reconectado
+        logger.info("Sensor reconnected successfully.")
+        
+        # Si el taxi estaba en movimiento, reanudar su camino
+        if self.color == "GREEN":
+            logger.info("Resuming taxi's journey.")
+            self.move_to_destination()
+            
     def listen_for_sensor_data(self, conn, addr):
         logger.info(f"Connected to Sensors at {addr}")
+        self.sensor_connected = True  # Marca el sensor como conectado
+
         while True:
-            data = conn.recv(1024).decode()
-            if data == "KO" and self.color == "GREEN" and self.customer_asigned != "x":
-                self.color = "RED"
-                self.send_position_update()
-            elif data == "OK" and self.color == "RED" and self.customer_asigned != "x":
-                self.color = "GREEN"
-                self.send_position_update()
+            try:
+                data = conn.recv(1024).decode()
+                if not data:
+                    self.handle_sensor_disconnection()
+                    break
+
+                if data == "KO" and self.color == "GREEN" and self.customer_asigned != "x":
+                    self.color = "RED"
+                    self.send_position_update()
+                elif data == "OK" and self.color == "RED" and self.customer_asigned != "x":
+                    self.color = "GREEN"
+                    self.send_position_update()
+
+            except (ConnectionResetError, ConnectionAbortedError) as e:
+                logger.error(f"Connection error: {e}")
+                self.handle_sensor_disconnection()
+                break  # Salir del bucle y esperar la reconexión
+
+        # Intentar reconectar en bucle si el sensor se ha desconectado
+        while not self.sensor_connected:
+            try:
+                conn, addr = self.sensor_socket.accept()
+                logger.info(f"Reconnecting to Sensor at {addr}")
+                self.handle_sensor_reconnection()
+            except Exception as e:
+                logger.warning(f"Reconnection attempt failed: {e}")
+                time.sleep(5)  # Espera antes de intentar reconectar
+
 
     def run(self):
        

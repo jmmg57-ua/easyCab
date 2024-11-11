@@ -344,6 +344,24 @@ class ECCentral:
         except KafkaError as e:
             logger.error(f"Failed to send confirmation to customer {customer_id}: {e}")
 
+    def process_update(self, data):
+        if data['status'] == "ERROR":
+            customer_id = data['customer_id']
+            notification = {
+            'customer_id': customer_id,
+            'status': "ERROR",
+            'assigned_taxi': data['taxi_id']
+            }
+            try:
+                self.producer.send('taxi_responses', notification)
+                self.producer.flush()
+                logger.info(f"The taxi sensor for the customer '{customer_id}' stopped working, notifying the customer: {notification}")
+            except KafkaError as e:
+                logger.error(f"Failed to send confirmation to customer {customer_id}: {e}")
+        else:
+            self.update_map(data)
+
+
     def kafka_listener(self):
         while True:
             try:
@@ -356,7 +374,7 @@ class ECCentral:
                     elif message.topic == 'taxi_updates':
                         data = message.value
                         logger.info(f"Received message on topic 'taxi_updates': {data}")
-                        self.update_map(data)
+                        self.process_update(data)
 
             except KafkaError as e:
                 logger.error(f"Kafka listener error: {e}")

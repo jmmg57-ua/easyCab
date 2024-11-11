@@ -97,7 +97,9 @@ class Customer:
                 self.customer_location = response.get('final_position')
                 self.logger.info("Service completed.")
                 return True  
-            
+            elif response.get('customer_id') == self.customer_id and response.get('status') == "ERROR":
+                self.logger.warning("The taxi sensor stopped working, wait please, the trip will continue shortly.")
+                
         self.logger.warning("Listener stopped unexpectedly.")
         return False
 
