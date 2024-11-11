@@ -12,7 +12,6 @@ class Customer:
         self.services_file = services_file
         self.producer = None
         self.consumer = None
-
         self.customer_location = [int(coord) for coord in customer_location.split(',')]  
         
        
@@ -25,7 +24,6 @@ class Customer:
         retry_count = 0
         while retry_count < 5:
             try:
-                # Set up Kafka Producer
                 self.producer = KafkaProducer(
                     bootstrap_servers=[self.kafka_broker],
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
@@ -33,15 +31,11 @@ class Customer:
                 )
                 self.logger.info("Kafka producer set up successfully")
 
-
                 self.consumer = KafkaConsumer(
                     'taxi_responses',
                     bootstrap_servers=[self.kafka_broker],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-
                     group_id=f'customer_{self.customer_id}', 
-
-
                     auto_offset_reset='earliest'
                 )
                 self.logger.info("Kafka consumer set up successfully")
@@ -83,17 +77,14 @@ class Customer:
         self.logger.info("Waiting for confirmation from CENTRAL...")
         for message in self.consumer:
             response = message.value
-
             if response['customer_id'] == self.customer_id:
                 status = response['status']
-      
                 if status == 'OK':
                     self.logger.info(f"Service accepted: {response}")
                     return True
                 elif status == 'KO':
                     self.logger.info(f"Service rejected: {response}")
                     return False
-
                 
     def wait_till_finished(self):
         """Espera hasta recibir una confirmación de finalización en 'taxi_responses'."""
@@ -110,24 +101,21 @@ class Customer:
         self.logger.warning("Listener stopped unexpectedly.")
         return False
 
+
     def run(self):
         services = self.read_services()
         if not services:
             self.logger.warning("No services found in the file. Exiting.")
             return
 
-#CAMBIAR comprobar asignacion y que termina el servicio
         for service in services:
             
             self.request_service(service)
-
             
             confirmation = self.wait_for_confirmation()
 
             if confirmation:
                 self.logger.info(f"Service to {service} asigned successfully.")
-
-                
                 
                 completed = self.wait_till_finished()
                 if completed:
@@ -150,8 +138,8 @@ if __name__ == "__main__":
     kafka_broker = sys.argv[1]
     customer_id = sys.argv[2]
     services_file = sys.argv[3]
-
     customer_location = sys.argv[4]
 
     customer = Customer(kafka_broker, customer_id, services_file, customer_location)
     customer.run()
+
