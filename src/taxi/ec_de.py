@@ -12,6 +12,11 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
+# Configurar el logger
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger()
+
 class DigitalEngine:
     def __init__(self, ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id):
         self.ec_central_ip = ec_central_ip
@@ -74,6 +79,7 @@ class DigitalEngine:
         self.sensor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sensor_socket.bind(('0.0.0.0', self.ec_s_port))
         self.sensor_socket.listen(1)
+
         logger.info(f"Digital Engine for Taxi {self.taxi_id} initialized")
 
     def authenticate(self):
@@ -156,6 +162,7 @@ class DigitalEngine:
             self.picked_off = 0
             self.status = "FREE"
             logger.info("Taxi is now FREE")
+
             self.send_position_update()
             
     def move_towards(self, target):
@@ -197,6 +204,7 @@ class DigitalEngine:
             group_id=f'digital_engine_{self.taxi_id}'
         )
         logger.info("Listening for map updates on 'map_updates'...")
+
 
         for message in consumer:
             map_data = message.value
@@ -288,3 +296,4 @@ if __name__ == "__main__":
     
     digital_engine = DigitalEngine(ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id)
     digital_engine.run()
+

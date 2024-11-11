@@ -127,6 +127,7 @@ class ECCentral:
             taxi_id = int(data.strip())
             logger.info(f"Authenticating taxi with ID: {taxi_id}")
             
+
             taxis = self.load_taxis()
             if taxi_id in taxis:
                 conn.sendall(b"OK")
@@ -230,6 +231,7 @@ class ECCentral:
             x, y = location.position
             bordered_map[y - 1, x - 1] = location.id 
         for taxi in self.taxis.values():
+
             x, y = taxi.position
             bordered_map[y - 1, x - 1] = str(taxi.id)  
 
@@ -246,6 +248,7 @@ class ECCentral:
         """
         Envía el estado actual del mapa a todos los taxis a través del tópico 'map_updates'.
         """
+
         if self.producer:
             try:
                 map_data = {
@@ -255,6 +258,7 @@ class ECCentral:
                     'locations': {k: {'position': v.position, 'color': v.color}
                                     for k, v in self.locations.items()}
                 }
+                logger.info(f"Broadcasting map data: {json.dumps(map_data, indent=2)}")
                 self.producer.send('map_updates', map_data)
                 logger.info("Broadcasted map to all taxis")
             except KafkaError as e:
@@ -273,13 +277,19 @@ class ECCentral:
         if destination not in self.locations:
             logger.error(f"Invalid destination: {destination}")
             return False
-
+          
         available_taxi = self.select_available_taxi()
         if available_taxi and available_taxi.status == "FREE":
             self.assign_taxi_to_customer(available_taxi, customer_id, location_key, destination)
             self.map_changed = True  
+
             return True
         else:
+            response = {
+                'customer_id': customer_id,
+                'status': "KO",
+                'assigned_taxi': 0
+            }
             logger.warning("No available taxis")
             return False
 
@@ -431,8 +441,6 @@ class ECCentral:
             if self.consumer:
                 self.consumer.close()
                 logger.info("Kafka consumer closed.")
-
-
             
 if __name__ == "__main__":
     if len(sys.argv) < 3:
