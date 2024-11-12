@@ -129,15 +129,76 @@ class ECCentral:
             
             taxis = self.load_taxis()
             if taxi_id in taxis:
+                taxis[taxi_id].status = "FREE"
+                taxis[taxi_id].color = "RED"
+                taxis[taxi_id].position = (1, 1)
+                taxis[taxi_id].customer_asigned = "x"
+                taxis[taxi_id].picked_off = 0
+
+                self.save_taxis(taxis)
+
                 conn.sendall(b"OK")
                 logger.info(f"Taxi {taxi_id} authenticated successfully.")
             else:
                 conn.sendall(b"KO")
                 logger.warning(f"Taxi {taxi_id} authentication failed.")
+            
+            self.listen_to_taxi(taxi_id, conn)
         except Exception as e:
             logger.error(f"Error during taxi authentication: {e}")
         finally:
             conn.close()
+
+    def listen_to_taxi(self, taxi_id, conn):
+        """Escucha mensajes de un taxi autenticado"""
+        while True:
+            try:
+                data = conn.recv(1024).decode()
+                
+                # Detectar mensaje vacío o desconexión
+                if data == "":
+                    # Verificar si el taxi tiene un cliente asignado antes de notificar
+                    customer = getattr(self.taxis.get(taxi_id), "customer_asigned", None)
+                    position = getattr(self.taxis.get(taxi_id), "position", None)
+                    
+                    logger.info(f"Taxi {taxi_id} has disconnected. Waiting 10 seconds")
+                    time.sleep(10)
+                    logger.info(f"Taxi {taxi_id} lost, marking the incident in the map.")
+                    
+                    self.taxis[taxi_id].position = None
+                    self.taxis[taxi_id].customer_asigned = "x"
+                    self.taxis[taxi_id].picked_off = 0
+                    self.taxis[taxi_id].status = "FREE"
+                    self.taxis[taxi_id].color = "RED"
+
+                    self.locations["X"] = Location("X", position, 'GREY')
+                    self.map_changed = True
+                    notification = {
+                        'customer_id': customer,
+                        'status': "TAXI",
+                        'assigned_taxi': taxi_id
+                        }
+
+                    if customer:
+                        logger.info(f"Notifying customer: '{customer}'")
+                        try:
+                            self.producer.send('taxi_responses', notification)
+                            self.producer.flush()
+                        except KafkaError as e:
+                            logger.error(f"Failed to send notification to customer {customer}: {e}")
+
+                    break
+
+                logger.info(f"Received from taxi {taxi_id}: {data}")
+
+            except (ConnectionResetError, ConnectionAbortedError) as e:
+                logger.error(f"Connection error with taxi {taxi_id}: {e}")
+                break
+
+        # Limpieza de recursos cuando se detecta desconexión
+        self.taxis.pop(taxi_id, None)
+        conn.close()
+        logger.info(f"Connection closed for taxi {taxi_id}")
     
     def notify_customer(self, taxi):
         customer_id = str(taxi.customer_asigned) if isinstance(taxi.customer_asigned, list) else taxi.customer_asigned
@@ -177,8 +238,7 @@ class ECCentral:
             taxi_updated = self.update_taxi_state(taxi_id, pos_x, pos_y, status, color, customer_asigned, picked_off)
             logger.info(f"taxi_id = {taxi_updated.id}, tiene de customer a {taxi_updated.customer_asigned}")
             self.finalize_trip_if_needed(taxi_updated)
-
-            self.redraw_map_and_broadcast()
+            self.map_changed= True
         
         except KeyError as e:
             logger.error(f"Key error when processing update: missing key {e}")
@@ -209,12 +269,7 @@ class ECCentral:
         if taxi.status == "END":
             self.save_taxis(self.taxis)
             self.notify_customer(taxi)
-
-    def redraw_map_and_broadcast(self):
-        """Redibuja el mapa y lo envía a todos los taxis."""
-        self.draw_map()
-        self.broadcast_map()
-
+            
 
     def draw_map(self):
         """Dibuja el mapa en los logs con delimitación de bordes, donde (0,0) no se representa."""
@@ -235,6 +290,8 @@ class ECCentral:
 
         # Colocar los taxis en el mapa
         for taxi in self.taxis.values():
+            if taxi.position == None:
+                continue
             x, y = taxi.position
             bordered_map[y - 1, x - 1] = str(taxi.id)
 
@@ -361,7 +418,7 @@ class ECCentral:
             customer_id = data['customer_id']
             notification = {
             'customer_id': customer_id,
-            'status': "ERROR",
+            'status': "SENSOR",
             'assigned_taxi': data['taxi_id']
             }
             try:
@@ -400,10 +457,11 @@ class ECCentral:
         """Envía el estado del mapa solo cuando ha habido cambios."""
         while True:
             if self.map_changed:
-
+                time.sleep(1)
+                self.draw_map()
                 self.broadcast_map()
                 self.map_changed = False  
-            time.sleep(1)  
+            time.sleep(0.1)  
 
 
     def start_server_socket(self):

@@ -175,7 +175,7 @@ class DigitalEngine:
         self.position[1] = self.position[1] % 21  
         
         self.send_position_update()
-        time.sleep(1)  
+        time.sleep(2)  
 
     def send_position_update(self):
         # Verificar si el socket está abierto antes de enviar
