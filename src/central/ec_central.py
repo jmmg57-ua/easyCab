@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from typing import Dict, Tuple
 import threading
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -41,6 +40,7 @@ class ECCentral:
         self.taxis_file = '/data/taxis.txt'  
         self.taxis = {}  
         self.locations = {}
+        self.customer_destinations = {}
         self.map_changed = False  
         self.setup_kafka()
 
@@ -239,6 +239,7 @@ class ECCentral:
             logger.info(f"taxi_id = {taxi_updated.id}, tiene de customer a {taxi_updated.customer_asigned}")
             self.finalize_trip_if_needed(taxi_updated)
             self.map_changed= True
+            self.redraw_map_and_broadcast()
         
         except KeyError as e:
             logger.error(f"Key error when processing update: missing key {e}")
@@ -270,13 +271,44 @@ class ECCentral:
             self.save_taxis(self.taxis)
             self.notify_customer(taxi)
             
+    def redraw_map_and_broadcast(self):
+        """Redibuja el mapa y lo envía a todos los taxis"""
+        self.draw_map()
+        self.broadcast_map()
+        
+    def generate_table(self):
+        """Genera la tabla de estado de taxis y clientes"""
+        table_lines = []
+        table_lines.append("               *** EASY CAB ***        ")
+        table_lines.append("     TAXIS                           CLIENTES   ")
+        table_lines.append(f"{'Id':<4}{'Destino':<10}{'Estado':<15}   {'Id':<4}{'Destino':<10}{'Estado':<15}")
 
+        taxi_lines = []
+        for taxi in self.taxis.values():
+            taxi_id = taxi.id
+            destination = taxi.customer_asigned if taxi.customer_asigned != "x" else "-"
+            state = f"OK. Servicio {destination}" if destination != "-" else "OK. Libre"
+            taxi_lines.append(f"{taxi_id:<4}{destination:<10}{state:<15}")
+
+        client_lines = []
+        for customer_id, destination in self.customer_destinations.items():
+            assigned_taxi = next((taxi.id for taxi in self.taxis.values() if taxi.customer_asigned == customer_id), "-")
+            state = f"OK. Taxi {assigned_taxi}" if assigned_taxi != "-" else "Esperando"
+            client_lines.append(f"{customer_id:<4}{destination:<10}{state:<15}")
+
+        max_lines = max(len(taxi_lines), len(client_lines))
+        for i in range(max_lines):
+            taxi_info = taxi_lines[i] if i < len(taxi_lines) else " " * 30
+            client_info = client_lines[i] if i < len(client_lines) else ""
+            table_lines.append(f"{taxi_info} | {client_info}")
+        
+        return "\n".join(table_lines)
+        
     def draw_map(self):
         """Dibuja el mapa en los logs con delimitación de bordes, donde (0,0) no se representa."""
-        logger.info("Current Map State with Borders:")
+        table = self.generate_table()
+        
         map_lines = [""]
-
-        # Ajuste del borde superior e inferior
         border_row = "#" * (self.map_size[1] * 2 + 2)  # Duplicamos el ancho para una apariencia cuadrada
         map_lines.append(border_row)
 
@@ -286,30 +318,36 @@ class ECCentral:
         # Colocar las localizaciones en el mapa
         for location in self.locations.values():
             x, y = location.position
-            bordered_map[y - 1, x - 1] = location.id
+            bordered_map[y - 1, x - 1] = location.id.ljust(2)
 
         # Colocar los taxis en el mapa
         for taxi in self.taxis.values():
             if taxi.position == None:
                 continue
             x, y = taxi.position
-            bordered_map[y - 1, x - 1] = str(taxi.id)
+            if taxi.customer_asigned != "x":
+                bordered_map[y - 1, x - 1] = f"{taxi.id}{taxi.customer_asigned}".ljust(2)
+            else:
+                bordered_map[y - 1, x - 1] = str(taxi.id).ljust(2)
 
         # Dibujar cada fila del mapa con espacio adicional para cuadrar
         for row in bordered_map:
-            formatted_row = "#"
-            for cell in row:
-                if cell == ' ':
-                    formatted_row += "  "  # Dos espacios para uniformidad
-                else:
-                    formatted_row += f"{cell} "  # Elemento con espacio adicional
-            formatted_row += "#"
+            formatted_row = "#" + "".join([f"{cell} " if cell != " " else "  " for cell in row]) + "#"
             map_lines.append(formatted_row)
 
-        map_lines.append(border_row)  # Borde inferior
+        map_lines.append(border_row)
 
-        # Imprimir el mapa completo
-        logger.info("\n".join(map_lines))
+        # Agregar líneas vacías antes de la tabla para centrarla verticalmente
+        half_height = len(map_lines) // 2 - 6
+        table_lines = [""] * half_height + table.splitlines()
+
+        # Mostrar mapa y tabla lado a lado con delimitador "|"
+        max_lines = max(len(map_lines), len(table_lines))
+        for i in range(max_lines):
+            map_row = map_lines[i] if i < len(map_lines) else ""
+            table_row = table_lines[i] if i < len(table_lines) else ""
+            logger.info(f"{map_row:<45} |   {table_row}")
+
 
     def broadcast_map(self):
         """
@@ -333,6 +371,8 @@ class ECCentral:
         customer_id = request['customer_id']
         destination = request['destination']
         customer_location = request['customer_location']
+        
+        self.customer_destinations[customer_id] = destination
 
         if customer_location:
             location_key = tuple(customer_location)
@@ -531,4 +571,5 @@ if __name__ == "__main__":
     listen_port = int(sys.argv[2])
     central = ECCentral(kafka_bootstrap_servers, listen_port)
     central.run()
+
 
