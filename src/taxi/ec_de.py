@@ -100,8 +100,8 @@ class DigitalEngine:
                     data = message.value
                     logger.info(f"Received message on topic 'taxi_instructions': {data}")
                 if 'taxi_id' not in data:
-                    logger.warning("Received instruction does not contain 'taxi_id'. Skipping.")
-                    continue
+                    logger.warning("Central has fallen, no further instructions")
+                    return
                 if data['taxi_id'] == self.taxi_id:
                     logger.info("Message received in topic 'taxi_instructions'.")
                     self.process_instruction(data)
