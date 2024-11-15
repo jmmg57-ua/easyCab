@@ -51,7 +51,7 @@ class DigitalEngine:
                     bootstrap_servers=[self.kafka_broker],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
                     group_id=f'customer_{self.taxi_id}',
-                    auto_offset_reset='earliest'
+                    auto_offset_reset='latest'
                 )
                 logger.info("Kafka consumer set up successfully")
                 return
@@ -92,31 +92,32 @@ class DigitalEngine:
             return False
         
     def kafka_listener(self):
+        data = None
         try:
             for message in self.consumer:
-                if self.central_disconnected:  # Si la central está desconectada, deja de procesar mensajes
+                if self.central_disconnected:
                     break
+                data = message.value
                 if message.topic == 'taxi_instructions':
-                    data = message.value
                     logger.info(f"Received message on topic 'taxi_instructions': {data}")
-                if 'taxi_id' not in data:
-                    logger.warning("Received instruction does not contain 'taxi_id'. Skipping.")
-                    continue
-                if data['taxi_id'] == self.taxi_id:
-                    logger.info("Message received in topic 'taxi_instructions'.")
-                    self.process_instruction(data)
+                    if 'taxi_id' not in data:
+                        logger.warning("Received instruction does not contain 'taxi_id'. Skipping.")
+                        continue
+                    if data['taxi_id'] == self.taxi_id:
+                        self.process_instruction(data)
                 elif message.topic == 'map_updates':
-                    data = message.value
-                    logger.info(f"Received message on topic 'map_updates'")
-                    self.process_map_update(data)
+                    logger.info("Received message on topic 'map_updates'")
+                    self.handle_map_updates(message.value)
+                self.draw_map()
 
         except KafkaError as e:
             logger.error(f"Lost connection to Kafka: {e}")
-            self.central_disconnected = True  # Indicar que la central está desconectada
-            self.continue_independently()  # Activar el modo independiente
+            self.central_disconnected = True
+            self.continue_independently()
         except Exception as e:
-                logger.error(f"General error in kafka_listener: {e} {message.topic}")
-                time.sleep(5)  
+            logger.error(f"General error in kafka_listener: {e}")
+            time.sleep(5)
+
 
     def process_instruction(self, instruction):
         if instruction['type'] == 'MOVE':
@@ -141,13 +142,15 @@ class DigitalEngine:
         while self.position != self.pickup and self.color == "GREEN" and self.sensor_connected and self.picked_off == 0:
             logger.info("Taxi moving towards the pickup location")
             self.move_towards(self.pickup)
+            self.draw_map()
 
         if self.position == self.pickup:
             self.picked_off = 1
 
-        while self.position != self.destination and self.color == "GREEN" and self.sensor_connected:
+        while self.position != self.destination and self.color == "GREEN" and self.sensor_connected and self.picked_off == 1:
             logger.info("Taxi moving towards the destination location")
             self.move_towards(self.destination)
+            self.draw_map()
 
         if self.position == self.destination:
             self.color = "RED"
@@ -161,6 +164,7 @@ class DigitalEngine:
             self.status = "FREE"
             logger.info("Taxi is now FREE")
             self.send_position_update()
+            self.draw_map()
 
             
     def move_towards(self, target):
@@ -178,7 +182,8 @@ class DigitalEngine:
         self.position[1] = self.position[1] % 21  
         
         self.send_position_update()
-        time.sleep(2)  
+        self.draw_map()
+        time.sleep(1)  
 
     def send_position_update(self):
         # Verificar si el socket está abierto antes de enviar
@@ -199,57 +204,67 @@ class DigitalEngine:
         else:
             logger.warning("Socket is closed, cannot send update.")
         
-    def listen_for_map_updates(self):
-        
-        consumer = KafkaConsumer(
-            'map_updates',
-            bootstrap_servers=[self.kafka_broker],
-            value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-            group_id=f'digital_engine_{self.taxi_id}'
-        )
-        logger.info("Listening for map updates on 'map_updates'...")
+    # def process_map_update(self, map_data):
+    #     """Actualiza el mapa local en el Digital Engine usando los datos recibidos."""
+    #     # Limpiar el mapa local antes de cada actualización
+    #     self.map = np.full(self.map_size, ' ', dtype=str)
 
-        for message in consumer:
-            map_data = message.value
-            logger.info(f"Received map update through 'map_updates'")
-            self.process_map_update(map_data) 
+    #     # Almacenar localizaciones en self.locations y colocarlas en el mapa
+    #     self.locations = {loc_id: location for loc_id, location in map_data['locations'].items()}
+    #     for loc_id, location in self.locations.items():
+    #         x, y = location['position']
+    #         x, y = x - 1, y - 1  # Ajustar índices a 0-19
+    #         if 0 <= x < self.map_size[0] and 0 <= y < self.map_size[1]:
+    #             self.map[y, x] = loc_id.ljust(2)
 
-    def process_map_update(self, map_data):
-        """Actualiza el mapa local en el Digital Engine usando los datos recibidos."""
-        # Limpiar el mapa local antes de cada actualización
-        self.map = np.full(self.map_size, ' ', dtype=str)
+    #     # Almacenar información de los taxis en self.taxis y colocarlos en el mapa
+    #     self.taxis = {taxi_id: taxi_info for taxi_id, taxi_info in map_data['taxis'].items()}
+    #     for taxi_id, taxi_info in self.taxis.items():
+    #         x, y = taxi_info['position']
+    #         x, y = x - 1, y - 1
+    #         if 0 <= x < self.map_size[0] and 0 <= y < self.map_size[1]:
+    #             self.map[y, x] = str(taxi_id).ljust(2)
 
-        # Almacenar localizaciones en self.locations y colocarlas en el mapa
-        self.locations = {loc_id: location for loc_id, location in map_data['locations'].items()}
-        for loc_id, location in self.locations.items():
-            x, y = location['position']
-            x, y = x - 1, y - 1  # Ajustar índices a 0-19
-            if 0 <= x < self.map_size[0] and 0 <= y < self.map_size[1]:
-                self.map[y, x] = loc_id.ljust(2)
+    #     # Colocar la posición del taxi actual
+    #     new_x, new_y = self.position[0] - 1, self.position[1] - 1
+    #     if 0 <= new_x < self.map_size[0] and 0 <= new_y < self.map_size[1]:
+    #         self.map[new_y, new_x] = str(self.taxi_id).ljust(2)
 
-        # Almacenar información de los taxis en self.taxis y colocarlos en el mapa
-        self.taxis = {taxi_id: taxi_info for taxi_id, taxi_info in map_data['taxis'].items()}
-        for taxi_id, taxi_info in self.taxis.items():
-            x, y = taxi_info['position']
-            x, y = x - 1, y - 1
-            if 0 <= x < self.map_size[0] and 0 <= y < self.map_size[1]:
-                self.map[y, x] = str(taxi_id).ljust(2)
+    #     logger.info("Map updated in Digital Engine")
+    #     self.draw_map()
 
-        # Colocar la posición del taxi actual
-        new_x, new_y = self.position[0] - 1, self.position[1] - 1
-        if 0 <= new_x < self.map_size[0] and 0 <= new_y < self.map_size[1]:
-            self.map[new_y, new_x] = str(self.taxi_id).ljust(2)
+    def handle_map_updates(self, message):
+        """
+        Procesa las actualizaciones de mapa recibidas a través de Kafka y
+        almacena las ubicaciones y taxis en los atributos de la clase.
+        """
+        # Almacenar la última actualización del mapa y procesar ubicaciones y taxis
+        self.locations = {loc_id: location for loc_id, location in message['locations'].items()}
+        self.taxis = {taxi_id: taxi_info for taxi_id, taxi_info in message['taxis'].items()}
+
+        # Verificar y registrar las ubicaciones y taxis recibidos
+        logger.info(f"Received locations: {self.locations}")
+        logger.info(f"Received taxis: {self.taxis}")
 
         logger.info("Map updated in Digital Engine")
-        self.draw_map()
+        self.draw_map()  # Dibuja el mapa completo inmediatamente después de recibir la actualización
+
 
 
     def draw_map(self, independent=False):
         """Dibuja el mapa en los logs del Digital Engine con estilo similar al de la central.
-           Si `independent=True`, solo muestra el taxi propio y las localizaciones."""
-        
+        Si `independent=True`, solo muestra el taxi propio y las localizaciones."""
+
+        logger.info("Drawing map with current state...")
+
+        if hasattr(self, 'locations'):
+            logger.info(f"Locations to be drawn: {self.locations}")
+        if hasattr(self, 'taxis'):
+            logger.info(f"Taxis to be drawn: {self.taxis}")
+
         logger.info("Current Map State with Borders:")
         map_lines = [""]
+
         border_row = "#" * (self.map_size[1] * 2 + 2)
         map_lines.append(border_row)
 
@@ -293,7 +308,11 @@ class DigitalEngine:
         
         # Moverse hacia el destino utilizando la última instrucción recibida
         while self.position != self.destination:
-            self.move_towards(self.destination)  # Mover el taxi paso a paso hacia el destino
+
+            logger.info("Current Map State with Borders:")
+            map_lines = [""]
+            border_row = "#" * (self.map_size[1] * 2 + 2)
+            map_lines.append(border_row)
             
             # Crear un mapa que solo contenga la posición del taxi y la localización de destino
             independent_map = np.full(self.map_size, '  ', dtype=str)
@@ -318,7 +337,7 @@ class DigitalEngine:
             logger.info("\n".join(map_lines))
             
             # Pausa antes del próximo movimiento
-            time.sleep(2)
+            time.sleep(1)
 
         # Una vez en el destino, mostrar mensaje final y detener actualizaciones
         logger.info("Taxi has reached its destination independently. No further instructions.")
@@ -354,6 +373,20 @@ class DigitalEngine:
             logger.info("Resuming taxi's journey.")
             self.move_to_destination()
             
+    def listen_to_central(self, conn):
+        while True:
+            try:
+                data = conn.recv(1024).decode()
+                if not data:  # Si no hay datos, la conexión ha sido cerrada
+                    self.central_disconnected = True
+                    self.continue_independently()
+                    break
+            except (ConnectionResetError, ConnectionAbortedError) as e:
+                logger.error(f"Connection to Central lost: {e}")
+                self.central_disconnected = True
+                self.continue_independently()
+                break  # Sale del bucle y activa el modo independiente
+
     def listen_for_sensor_data(self, conn, addr):
         logger.info(f"Connected to Sensors at {addr}")
         self.sensor_connected = True  # Marca el sensor como conectado
@@ -403,10 +436,8 @@ class DigitalEngine:
         
         threading.Thread(target=self.kafka_listener, daemon=True).start()
         threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
-        
-        map_update_thread = threading.Thread(target=self.listen_for_map_updates, daemon=True)
-        map_update_thread.start()
-        
+        threading.Thread(target=self.listen_to_central, args=(conn,), daemon=True).start()
+
         while True:
             time.sleep(1)
 

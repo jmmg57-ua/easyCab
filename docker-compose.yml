@@ -47,9 +47,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      #Cambiar en command kafka por la ip y port del pc host de kafka
+      #Cambiar en command kafka por la ip y port 92092 del pc host de kafka
     command: >
-      python ec_central.py kafka:9092 8000 
+      python ec_central.py kafka:9092 8000
 
 
   dengine1:
@@ -62,6 +62,7 @@ services:
       - kafka
       - central
     #Cambiar en command kafka por la ip y port del host de kafka
+    #Cambiar en command central por la ip de central
     command: >
       python ec_de.py central 8000 kafka:9092 sensor1 9001 1
 
@@ -175,7 +176,7 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 a /data/services.txt 12,10
+      python ec_customer.py kafka:9092 a /data/services1.txt 12,10
 
   customer2:
     build:
@@ -186,7 +187,7 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 b /data/services.txt 5,19
+      python ec_customer.py kafka:9092 b /data/services2.txt 5,19
 
   customer3:
     build:
@@ -197,7 +198,7 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 c /data/services.txt 20,1
+      python ec_customer.py kafka:9092 c /data/services3.txt 20,1
 
   customer4:
     build:
@@ -208,7 +209,7 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 d /data/services.txt 1,20
+      python ec_customer.py kafka:9092 d /data/services4.txt 1,20
 
   customer5:
     build:
@@ -219,5 +220,5 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 e /data/services.txt 19,19
+      python ec_customer.py kafka:9092 e /data/services5.txt 19,19
 

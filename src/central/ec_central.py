@@ -62,7 +62,7 @@ class ECCentral:
                     bootstrap_servers=[self.kafka_bootstrap_servers],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
                     group_id='central-group',
-                    auto_offset_reset='earliest'
+                    auto_offset_reset='latest'
                 )
                 logger.info("Kafka consumer set up successfully")
                 return
@@ -239,7 +239,6 @@ class ECCentral:
             logger.info(f"taxi_id = {taxi_updated.id}, tiene de customer a {taxi_updated.customer_asigned}")
             self.finalize_trip_if_needed(taxi_updated)
             self.map_changed= True
-            self.redraw_map_and_broadcast()
         
         except KeyError as e:
             logger.error(f"Key error when processing update: missing key {e}")
@@ -270,11 +269,6 @@ class ECCentral:
         if taxi.status == "END":
             self.save_taxis(self.taxis)
             self.notify_customer(taxi)
-            
-    def redraw_map_and_broadcast(self):
-        """Redibuja el mapa y lo envía a todos los taxis"""
-        self.draw_map()
-        self.broadcast_map()
         
     def generate_table(self):
         """Genera la tabla de estado de taxis y clientes"""
@@ -539,6 +533,8 @@ class ECCentral:
         logger.info("EC_Central is running...")
         
         self.draw_map()  
+        self.broadcast_map()
+        self.map_changed = False
 
 
         auth_thread = threading.Thread(target=self.start_server_socket, daemon=True)
