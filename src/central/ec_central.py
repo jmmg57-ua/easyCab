@@ -82,11 +82,12 @@ class ECCentral:
                 for line in f:
                     loc_id, x, y = line.strip().split()
                     x, y = int(x), int(y)
-                    self.locations[loc_id] = Location(loc_id, (x, y),"BLUE")
-                    self.map[y, x] = loc_id
-                    
+                    self.locations[loc_id] = Location(loc_id, (x, y), "BLUE")
+                    self.map[y - 1, x - 1] = loc_id  # Ajuste del índice para la matriz
+            logger.info("Map configuration loaded successfully.")
         except Exception as e:
             logger.error(f"Error loading map configuration: {e}")
+
 
     def load_taxis(self):
         """Carga los taxis desde el fichero."""

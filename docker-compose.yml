@@ -162,7 +162,7 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 a /data/services1.txt 12,10
+      python ec_customer.py kafka:9092 a /data/services1.txt 1,4
 
   customer2:
     build:
@@ -173,7 +173,7 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 b /data/services2.txt 5,19
+      python ec_customer.py kafka:9092 b /data/services2.txt 2,8
 
   customer3:
     build:
@@ -184,7 +184,7 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 c /data/services3.txt 20,1
+      python ec_customer.py kafka:9092 c /data/services3.txt 3,12
 
   customer4:
     build:
@@ -195,7 +195,7 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 d /data/services4.txt 1,20
+      python ec_customer.py kafka:9092 d /data/services4.txt 4,16
 
   customer5:
     build:
@@ -206,5 +206,5 @@ services:
     volumes:
       - ./data:/data 
     command: >
-      python ec_customer.py kafka:9092 e /data/services5.txt 19,19
+      python ec_customer.py kafka:9092 e /data/services5.txt 5,20
 
