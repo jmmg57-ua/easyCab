@@ -36,7 +36,7 @@ class Customer:
                     bootstrap_servers=[self.kafka_broker],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
                     group_id=f'customer_{self.customer_id}', 
-                    auto_offset_reset='earliest'
+                    auto_offset_reset='latest'
                 )
                 self.logger.info("Kafka consumer set up successfully")
                 return

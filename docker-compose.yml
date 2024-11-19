@@ -40,8 +40,6 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092   # Cambiar por ip y port host kafka
     volumes:
       - ./data:/data  
-    depends_on:
-      - kafka
     healthcheck:
       test: ["CMD-SHELL", "python -c 'from kafka import KafkaProducer; KafkaProducer(bootstrap_servers=[\"kafka:9092\"])'"]
       interval: 30s
@@ -58,9 +56,6 @@ services:
       dockerfile: docker/Dockerfile.ec_de
     ports:
       - "9001:9001"
-    depends_on:
-      - kafka
-      - central
     #Cambiar en command kafka por la ip y port del host de kafka
     #Cambiar en command central por la ip de central
     command: >
@@ -72,9 +67,6 @@ services:
       dockerfile: docker/Dockerfile.ec_de
     ports:
       - "9002:9002"
-    depends_on:
-      - kafka
-      - central
     #Cambiar en command kafka por la ip y port del host de kafka
     command: >
       python ec_de.py central 8000 kafka:9092 sensor2 9002 2
@@ -85,9 +77,6 @@ services:
       dockerfile: docker/Dockerfile.ec_de
     ports:
       - "9003:9003"
-    depends_on:
-      - kafka
-      - central
     #Cambiar en command kafka por la ip y port del host de kafka
     command: >
       python ec_de.py central 8000 kafka:9092 sensor3 9003 3
@@ -98,9 +87,6 @@ services:
       dockerfile: docker/Dockerfile.ec_de
     ports:
       - "9004:9004"
-    depends_on:
-      - kafka
-      - central
     #Cambiar en command kafka por la ip y port del host de kafka
     command: >
       python ec_de.py central 8000 kafka:9092 sensor4 9004 4
