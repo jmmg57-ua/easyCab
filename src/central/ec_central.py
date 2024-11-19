@@ -335,7 +335,8 @@ class ECCentral:
             x, y = taxi.position
             if 1 <= x <= self.map_size[1] and 1 <= y <= self.map_size[0]:  # Verificar límites
                 if taxi.status == "DOWN":
-                    self.taxis[taxi.id].id = "X"
+                    bordered_map[y - 1, x - 1] = "X "  # Marcar incidencia
+                elif taxi.auth_status == 1:
                     bordered_map[y - 1, x - 1] = str(taxi.id).ljust(2)
 
         # Construir las filas del mapa
@@ -574,4 +575,7 @@ if __name__ == "__main__":
     central = ECCentral(kafka_bootstrap_servers, listen_port)
     central.run()
 
+
+# ^C
+# 
 
