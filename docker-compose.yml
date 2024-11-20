@@ -34,6 +34,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_central
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true  
     ports:
       - "8000:8000"
     environment:
@@ -46,8 +48,8 @@ services:
       timeout: 10s
       retries: 5
       #Cambiar en command kafka por la ip y port 92092 del pc host de kafka
-    command: >
-      python ec_central.py kafka:9092 8000
+    #command: >
+     # python ec_central.py kafka:9092 8000
 
 
   dengine1:

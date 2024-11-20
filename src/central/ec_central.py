@@ -259,7 +259,7 @@ class ECCentral:
             self.notify_customer(taxi)
         
     def generate_table(self):
-        """Genera la tabla de estado de taxis y clientes."""
+        """Genera la tabla de estado de taxis y clientes con el menú fijo 12 líneas debajo del título."""
         table_lines = []
         table_lines.append("               *** EASY CAB ***        ")
         table_lines.append("     TAXIS                           CLIENTES   ")
@@ -300,7 +300,6 @@ class ECCentral:
             else:
                 state = f"OK. Taxi {assigned_taxi}"
 
-            
             client_lines.append(f"{customer_id:<4}{destination:<10}{state:<15}")
 
         max_lines = max(len(taxi_lines), len(client_lines))
@@ -308,20 +307,36 @@ class ECCentral:
             taxi_info = taxi_lines[i] if i < len(taxi_lines) else " " * 30
             client_info = client_lines[i] if i < len(client_lines) else ""
             table_lines.append(f"{taxi_info} | {client_info}")
-        
+
+        # Calcular el número de líneas necesarias para fijar el menú a 12 líneas debajo del título
+        lines_after_title = len(table_lines) - 3  # Resta las líneas del título de la tabla
+        padding_lines = max(0, 12 - lines_after_title)
+
+        # Añadir las líneas en blanco
+        table_lines.extend([""] * padding_lines)
+
+        # Añadir el menú de órdenes al final de la tabla
+        menu_lines = [
+            "Órdenes de Central:",
+            "- Para parar el taxi introduce ID del taxi que deseas parar.",
+            "- Para reanudar la marcha del taxi, introduce el ID del taxi.",
+            '- Para enviar un taxi a base introduce el carácter "b" (Back up).',
+            '- Para cambiar el destino de un taxi usa el siguiente formato: "<ID_Taxi> <ID_Localización>".'
+        ]
+        table_lines.extend(menu_lines)
+
         return "\n".join(table_lines)
 
-
-        
+            
     def draw_map(self):
-        """Dibuja el mapa en los logs con delimitación de bordes."""
+        """Dibuja el mapa y la tabla de estado lado a lado en la consola."""
         table = self.generate_table()
-        
-        map_lines = [""]  # Encabezado vacío para estilo
-        border_row = "#" * (self.map_size[1] * 2 + 2)  # Bordes del mapa
+
+        # Construir las líneas del mapa
+        map_lines = []
+        border_row = "#" * (self.map_size[1] * 2 + 2)
         map_lines.append(border_row)
 
-        # Crear un mapa vacío con celdas formateadas
         bordered_map = np.full((self.map_size[0], self.map_size[1]), ' ', dtype=str)
 
         # Colocar las localizaciones en el mapa
@@ -331,31 +346,40 @@ class ECCentral:
 
         # Colocar los taxis autenticados en el mapa
         for taxi in self.taxis.values():
-            if taxi.auth_status != 1:  # Solo mostrar taxis autenticados
+            if taxi.auth_status != 1:
                 continue
             x, y = taxi.position
-            if 1 <= x <= self.map_size[1] and 1 <= y <= self.map_size[0]:  # Verificar límites
+            if 1 <= x <= self.map_size[1] and 1 <= y <= self.map_size[0]:
                 if taxi.status == "DOWN":
-                    bordered_map[y - 1, x - 1] = "X "  # Marcar incidencia
+                    bordered_map[y - 1, x - 1] = "X "
                 elif taxi.auth_status == 1:
                     bordered_map[y - 1, x - 1] = str(taxi.id).ljust(2)
 
-        # Construir las filas del mapa
+        # Añadir las filas al mapa
         for row in bordered_map:
             formatted_row = "#" + "".join([f"{cell} " if cell != " " else "  " for cell in row]) + "#"
             map_lines.append(formatted_row)
 
         map_lines.append(border_row)
 
-        # Integrar mapa y tabla
-        half_height = len(map_lines) // 2 - 6
-        table_lines = [""] * half_height + table.splitlines()
+        # Dividir las líneas de la tabla
+        table_lines = table.split("\n")
 
+        # Calcular el número máximo de líneas entre mapa y tabla
         max_lines = max(len(map_lines), len(table_lines))
-        for i in range(max_lines):
-            map_row = map_lines[i] if i < len(map_lines) else ""
-            table_row = table_lines[i] if i < len(table_lines) else ""
-            logger.info(f"{map_row:<45} |   {table_row}")
+
+        # Ajustar mapa y tabla para que tengan el mismo número de líneas
+        padded_map_lines = map_lines + [""] * (max_lines - len(map_lines))
+        padded_table_lines = table_lines + [""] * (max_lines - len(table_lines))
+
+        # Combinar mapa y tabla línea por línea
+        combined_lines = [
+            f"{map_line:<45}   {table_line}"
+            for map_line, table_line in zip(padded_map_lines, padded_table_lines)
+        ]
+
+        # Mostrar el resultado en la consola
+        print("\n".join(combined_lines))
 
 
 
@@ -536,35 +560,56 @@ class ECCentral:
             except Exception as e:
                 logger.error(f"General error while closing Kafka producer: {e}")
 
+    #def cetral_input(self):
+        
+    def input_listener(self):
+        """Hilo dedicado para recibir inputs sin bloquear la ejecución principal."""
+        while True:
+            try:
+                user_input = input()  # Capturar input del usuario
+                if user_input:
+                    print(f"He recibido un input: {user_input}")
+            except Exception as e:
+                print(f"Error al procesar input: {e}")
+                break
+
+
+
 
     def run(self):
         self.load_map_config()
         self.load_taxis()
         logger.info("EC_Central is running...")
-        
-        self.draw_map()  
+
+        # Mostrar el mapa inicial
+        self.draw_map()
         self.broadcast_map()
         self.map_changed = False
 
-
+        # Iniciar hilos para las funcionalidades existentes
         auth_thread = threading.Thread(target=self.start_server_socket, daemon=True)
         auth_thread.start()
-        
-        threading.Thread(target=self.kafka_listener, daemon=True).start()
-        
-        map_broadcast_thread = threading.Thread(target=self.auto_broadcast_map, daemon=True)
-        map_broadcast_thread.start()
-        
+
+        kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
+        kafka_thread.start()
+
+        map_thread = threading.Thread(target=self.auto_broadcast_map, daemon=True)
+        map_thread.start()
+
+        # Hilo para manejar inputs sin bloquear
+        input_thread = threading.Thread(target=self.input_listener, daemon=True)
+        input_thread.start()
+
         try:
             while True:
-                time.sleep(1)
+                time.sleep(1)  # Mantener el programa en ejecución
         except KeyboardInterrupt:
             logger.info("Shutting down...")
-        finally:
             self.close_producer()
             if self.consumer:
                 self.consumer.close()
                 logger.info("Kafka consumer closed.")
+
 
 
             
@@ -578,7 +623,4 @@ if __name__ == "__main__":
     central = ECCentral(kafka_bootstrap_servers, listen_port)
     central.run()
 
-
-# ^C
-# 
 
