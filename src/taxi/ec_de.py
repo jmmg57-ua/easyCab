@@ -25,7 +25,7 @@ class DigitalEngine:
         self.status = "FREE"   
         self.color = "RED"     
         self.position = [1, 1]  
-        self.pickup = None
+        self.pickup = 0
         self.destination = None
         self.customer_asigned = "x"
         self.locations = {}
@@ -99,11 +99,11 @@ class DigitalEngine:
                     break
                 data = message.value
                 if message.topic == 'taxi_instructions':
-                    logger.info(f"Received message on topic 'taxi_instructions': {data}")
                     if 'taxi_id' not in data:
                         logger.warning("Received instruction does not contain 'taxi_id'. Skipping.")
                         continue
                     if data['taxi_id'] == self.taxi_id:
+                        logger.info(f"Received message on topic 'taxi_instructions'")
                         self.process_instruction(data)
                 elif message.topic == 'map_updates':
                     logger.info("Received message on topic 'map_updates'")
@@ -122,19 +122,26 @@ class DigitalEngine:
     def process_instruction(self, instruction):
         if instruction['type'] == 'MOVE':
             self.pickup = instruction['pickup']
-            logger.info(f'PICK UP LOCATION = {self.pickup}')
-            self.destination = instruction['destination']
-            logger.info(f'DESTINATION LOCATION = {self.destination}')
+            logger.info("INSTRUCCION MOVE")
+            if isinstance(instruction['destination'], (list, tuple)):
+                self.destination = instruction['destination']
+            else:
+                logger.error(f"Invalid destination format: {instruction['destination']}")
+                return
             self.status = "BUSY"
             self.color = "GREEN"
             self.customer_asigned = instruction['customer_id']
-            logger.info(f'ASIGNED CUSTOMER = {self.customer_asigned}')
             self.move_to_destination()
         elif instruction['type'] == 'STOP':
+            logger.info("INSTRUCCION STOP")
             self.color = "RED"
+            self.send_position_update()
         elif instruction['type'] == 'RESUME':
+            logger.info("INSTRUCCION RESUME")
             self.color = "GREEN"
+            self.send_position_update()
         elif instruction['type'] == 'RETURN_TO_BASE':
+            logger.info("INSTRUCCION RETURN")
             self.pickup = 0
             self.destination = [1, 1]
             self.status = "BUSY"
@@ -144,36 +151,45 @@ class DigitalEngine:
             self.send_position_update()
             self.move_to_destination()
         elif instruction['type'] == 'CHANGE':
-            self.destination = instruction['destination']
-            self.color = "GREEN"
+            logger.info("INSTRUCCION CHANGE")
+            if isinstance(instruction['destination'], (list, tuple)):
+                self.destination = instruction['destination']
+                self.color = "GREEN"
+                self.send_position_update()
+                self.move_to_destination()
+            else:
+                logger.error(f"Invalid destination format: {instruction['destination']}")
+                return
 
     def move_to_destination(self):
-        while self.position != self.pickup and self.color == "GREEN" and self.sensor_connected and self.picked_off == 0:
-            logger.info("Taxi moving towards the pickup location")
-            self.move_towards(self.pickup)
-            self.draw_map()
+        try:
+            if not isinstance(self.destination, (list, tuple)):
+                logger.error(f"Invalid destination: destination={self.destination}")
+                return
 
-        if self.position == self.pickup:
-            self.picked_off = 1
+            while self.position != self.pickup and self.color == "GREEN" and self.sensor_connected and self.picked_off == 0:
+                self.move_towards(self.pickup)
 
-        while self.position != self.destination and self.color == "GREEN" and self.sensor_connected and self.picked_off == 1:
-            logger.info("Taxi moving towards the destination location")
-            self.move_towards(self.destination)
-            self.draw_map()
+            if self.position == self.pickup:
+                self.picked_off = 1
 
-        if self.position == self.destination:
-            self.color = "RED"
-            self.status = "END"
-            logger.info("Trip ENDED!!")
-            self.send_position_update()
-            
-            self.customer_asigned = "x"
-            time.sleep(4)
-            self.picked_off = 0
-            self.status = "FREE"
-            logger.info("Taxi is now FREE")
-            self.send_position_update()
-            self.draw_map()
+            while self.position != self.destination and self.color == "GREEN" and self.sensor_connected and self.picked_off == 1:
+                self.move_towards(self.destination)
+
+            if self.position == self.destination:
+                self.color = "RED"
+                self.status = "END"
+                logger.info("TRIP ENDED!!")
+                self.send_position_update()
+                self.customer_asigned = "x"
+                time.sleep(4)
+                self.picked_off = 0
+                self.status = "FREE"
+                logger.info("Taxi is now FREE")
+                self.send_position_update()
+        except Exception as e:
+            logger.error(f"Error in move_to_destination: {e}")
+
 
             
     def move_towards(self, target):
@@ -191,8 +207,8 @@ class DigitalEngine:
         self.position[1] = self.position[1] % 21  
         
         self.send_position_update()
-        self.draw_map()
-        time.sleep(1)  
+        # self.draw_map()
+        time.sleep(1.5)  
 
     def send_position_update(self):
         # Verificar si el socket está abierto antes de enviar
@@ -252,8 +268,8 @@ class DigitalEngine:
         self.taxis = {taxi_id: taxi_info for taxi_id, taxi_info in message['taxis'].items()}
 
         # Verificar y registrar las ubicaciones y taxis recibidos
-        logger.info(f"Received locations: {self.locations}")
-        logger.info(f"Received taxis: {self.taxis}")
+        #logger.info(f"Received locations: {self.locations}")
+        #logger.info(f"Received taxis: {self.taxis}")
 
         logger.info("Map updated in Digital Engine")
         #self.draw_map()  # Dibuja el mapa completo inmediatamente después de recibir la actualización

@@ -12,3 +12,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar el resto de los archivos después de instalar dependencias
 COPY ./src/central ./
+
+ENTRYPOINT ["/bin/bash"]

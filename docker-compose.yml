@@ -36,6 +36,7 @@ services:
       dockerfile: docker/Dockerfile.ec_central
     stdin_open: true       # Para habilitar la entrada estándar interactiva
     tty: true  
+    entrypoint: /bin/bash
     ports:
       - "8000:8000"
     environment:
