@@ -22,6 +22,7 @@ class Taxi:
     customer_asigned: str
     picked_off: int
     auth_status: int
+    stopped: bool = False
 
 @dataclass
 class Location:
@@ -91,24 +92,24 @@ class ECCentral:
 
     def load_taxis(self):
         """Carga los taxis desde el fichero."""
-        taxis = {}
         try:
             with open(self.taxis_file, 'r') as f:
                 for line in f:
                     taxi_id, status, color, pos_x, pos_y, customer_asigned, picked_off, auth_status = line.strip().split('#')
-                    taxis[int(taxi_id)] = Taxi(
+                    self.taxis[int(taxi_id)] = Taxi(
                         id=int(taxi_id),
-                        position=(int(pos_x), int(pos_y)),
                         status=status,
                         color=color,
+                        position=(int(pos_x), int(pos_y)),
                         customer_asigned=customer_asigned,
-                        picked_off=picked_off,
+                        picked_off=int(picked_off),
                         auth_status=int(auth_status)
                     )
-
+            logger.info("Taxis loaded successfully.")
+        except FileNotFoundError:
+            logger.warning("Taxis file not found. Starting with an empty list.")
         except Exception as e:
             logger.error(f"Error loading taxis from file: {e}")
-        return taxis
 
     def save_taxis(self, taxis):
         """Guarda los taxis en el fichero."""
@@ -128,7 +129,7 @@ class ECCentral:
             taxi_id = int(data.strip())
 
             # Asegurar que el taxi existe en self.taxis
-            if taxi_id not in self.taxis:
+            if taxi_id in self.taxis:
                 self.taxis[taxi_id] = Taxi(
                     id=taxi_id,
                     status="KO",
@@ -136,18 +137,10 @@ class ECCentral:
                     position=(1, 1),
                     customer_asigned="x",
                     picked_off=0,
-                    auth_status=0  # No autenticado inicialmente
+                    auth_status=1  # No autenticado inicialmente
                 )
-
-            # Actualizar el estado del taxi autenticado
-            taxi = self.taxis[taxi_id]
-            taxi.status = "FREE"
-            taxi.color = "RED"
-            taxi.position = (1, 1)
-            taxi.customer_asigned = "x"
-            taxi.picked_off = 0
-            taxi.auth_status = 1
-            self.save_taxis(self.taxis)
+            else:
+                logger.warning("Taxi isn't in the database")
 
             conn.sendall(b"OK")
             logger.info(f"Taxi {taxi_id} authenticated successfully.")
@@ -320,14 +313,110 @@ class ECCentral:
             "Órdenes de Central:",
             "- Para parar el taxi introduce ID del taxi que deseas parar.",
             "- Para reanudar la marcha del taxi, introduce el ID del taxi.",
-            '- Para enviar un taxi a base introduce el carácter "b" (Back up).',
+            '- Para enviar un taxi a base introduce el carácter "b <ID_Taxi>".',
             '- Para cambiar el destino de un taxi usa el siguiente formato: "<ID_Taxi> <ID_Localización>".'
         ]
         table_lines.extend(menu_lines)
 
         return "\n".join(table_lines)
 
+    def parar_continuar(self, taxi_id):
+        if taxi_id in self.taxis:
+            try:
+
+                if self.taxis[taxi_id].stopped ==  False:
+                    instruction = {
+                    'taxi_id': taxi_id,
+                    'type': 'STOP',
+                    }
+                    self.taxis[taxi_id].stopped = True
+                    print(f"Central ordered the taxi {taxi_id} to STOP")
+                    
+                    notification = {
+                        'customer_id': self.taxis[taxi_id].customer_asigned,
+                        'status': "STOP",
+                        'assigned_taxi': taxi_id,
+                    }
+                
+                    print(f"Notifying customer '{self.taxis[taxi_id].customer_asigned}'")
+
+                    
+                else:
+                    instruction = {
+                    'taxi_id': taxi_id,
+                    'type': 'RESUME',
+                    }
+                    self.taxis[taxi_id].stopped = False
+                    print(f"Central ordered the taxi {taxi_id} to CONTINUE")
+
+                    notification = {
+                        'customer_id': self.taxis[taxi_id].customer_asigned,
+                        'status': "RESUME",
+                        'assigned_taxi': taxi_id,
+                    }
+                
+                    print(f"Notifying customer '{self.taxis[taxi_id].customer_asigned}'")
+
+
+                self.producer.send('taxi_instructions', instruction)
+                self.producer.send('taxi_responses', notification)
+            except KafkaError as e:
+                logger.error(f"Error in the order communication for taxi {taxi_id} {e}")
+        
+
+    def return_to_base(self, taxi_id):
+        if taxi_id in self.taxis:
+            try:
+                instruction = {
+                'taxi_id': taxi_id,
+                'type': 'RETURN_TO_BASE',
+                }
+                print(f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
             
+                self.producer.send('taxi_instructions', instruction)
+
+                notification = {
+                        'customer_id': self.taxis[taxi_id].customer_asigned,
+                        'status': "RETURN",
+                        'assigned_taxi': taxi_id,
+                    }
+                
+                print(f"Notifying customer '{self.taxis[taxi_id].customer_asigned}'")
+
+                self.producer.send('taxi_responses', notification)
+
+            except KafkaError as e:
+                logger.error(f"Error in the order communication for taxi {taxi_id} {e}")
+
+    def change_destination(self, taxi_id, destination):
+        if taxi_id in self.taxis:
+            if destination in self.locations:
+                destination_position = self.locations[destination].position
+                try:
+
+                    instruction = {
+                    'taxi_id': taxi_id,
+                    'type': 'CHANGE',
+                    'destination': destination_position
+                    }
+                    print(f"Central ordered the taxi {taxi_id} to CHANGE ITS DESTINATION to {destination_position}")
+                
+                    notification = {
+                        'customer_id': self.taxis[taxi_id].customer_asigned,
+                        'status': "CHANGE",
+                        'assigned_taxi': taxi_id,
+                        'destination' : destination
+                    }
+                    print(f"Notifying customer '{self.taxis[taxi_id].customer_asigned}'")
+
+                    self.producer.send('taxi_instructions', instruction)
+                    self.producer.send('taxi_responses', notification)
+
+                except KafkaError as e:
+                    logger.error(f"Error in the order communication for taxi {taxi_id} {e}")
+            else:
+                print(f"Destino {destination} no encontrado.")
+
     def draw_map(self):
         """Dibuja el mapa y la tabla de estado lado a lado en la consola."""
         table = self.generate_table()
@@ -563,15 +652,38 @@ class ECCentral:
     #def cetral_input(self):
         
     def input_listener(self):
-        """Hilo dedicado para recibir inputs sin bloquear la ejecución principal."""
         while True:
             try:
-                user_input = input()  # Capturar input del usuario
+                user_input = input().strip()  # Capturar input del usuario
                 if user_input:
-                    print(f"He recibido un input: {user_input}")
+
+                    # Procesar input
+                    command_parts = user_input.split()
+                    if len(command_parts) == 2:  # Comando con dos parámetros
+                        action = command_parts[0]
+                        try:
+                            taxi_id = int(command_parts[1])
+                            if action.lower() == "b":  # Return to base
+                                self.return_to_base(taxi_id)
+                            else:  # Cambiar destino
+                                destination = command_parts[1]
+                                self.change_destination(taxi_id, destination)
+                        except ValueError:
+                            print("Formato incorrecto. Consulte el menú para las opciones.")
+                        except KeyError:
+                            print(f"Destino no válido: {command_parts[1]}.")
+
+                    elif len(command_parts) == 1:  # Parar o continuar
+                        try:
+                            taxi_id = int(command_parts[0])
+                            self.parar_continuar(taxi_id)
+                        except ValueError:
+                            print("Formato incorrecto. Consulte el menú para las opciones.")
+
+                    else:
+                        print("Comando no reconocido. Consulte el menú para las opciones.")
             except Exception as e:
                 print(f"Error al procesar input: {e}")
-                break
 
 
 

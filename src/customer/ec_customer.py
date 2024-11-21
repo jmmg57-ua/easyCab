@@ -104,6 +104,19 @@ class Customer:
                 self.logger.warning("The taxi isn't working, we will asign you another one.")
                 return True
             
+            elif response.get('customer_id') == self.customer_id and response.get('status') == "CHANGE":
+                self.logger.info(f"Your destination has been changed to {response.get('destination')}")
+                
+            elif response.get('customer_id') == self.customer_id and response.get('status') == "STOP":
+                self.logger.info(f"The taxi stopped by a controlled order")
+
+            elif response.get('customer_id') == self.customer_id and response.get('status') == "RESUME":
+                self.logger.info("The taxi continues moving to your destination")
+
+            elif response.get('customer_id') == self.customer_id and response.get('status') == "RETURN":
+                self.logger.info(f"Your destination has been changed to {response.get('destination')}")
+                return True
+            
         self.logger.warning("Listener stopped unexpectedly.")
         return False
 
