@@ -179,7 +179,7 @@ class ECCentral:
                     # Esperar 10 segundos antes de considerarlo una incidencia permanente
                     time.sleep(10)
                     taxi.status = "DOWN"
-                    taxi.auth_status = 0  # Mantener autenticación
+                    taxi.auth_status = 0 
                     logger.info(f"Marking taxi {taxi_id} as inactive on the map.")
                     break
 
@@ -249,6 +249,7 @@ class ECCentral:
             self.save_taxis()
             if picked_off==1:
                 self.locations[customer_assigned].position = taxi.position 
+                self.customers[customer_assigned].picked_off = 1
             return taxi
         else:
             logger.warning(f"No taxi found with id {taxi_id}")
@@ -324,10 +325,10 @@ class ECCentral:
         # Añadir el menú de órdenes al final de la tabla
         menu_lines = [
             "Órdenes de Central:",
-            "- Para parar el taxi introduce ID del taxi que deseas parar.",
-            "- Para reanudar la marcha del taxi, introduce el ID del taxi.",
-            '- Para enviar un taxi a base introduce el carácter "b <ID_Taxi>".',
-            '- Para cambiar el destino de un taxi usa el siguiente formato: "<ID_Taxi> <ID_Localización>".'
+            "- Parar un taxi:  '<ID_Taxi>'",
+            "- Reanudar marcha: '<ID_Taxi>'",
+            "- Enviar un taxi a base: 'b <ID_Taxi>'.",
+            "- Cambiar destino: '<ID_Taxi> <ID_Location>'."
         ]
         table_lines.extend(menu_lines)
 
@@ -454,8 +455,6 @@ class ECCentral:
                 if taxi.status == "DOWN":
                     bordered_map[y - 1, x - 1] = "X "
                 elif taxi.auth_status == 1:
-                    if taxi.auth_status != 1:
-                        continue
                     bordered_map[y - 1, x - 1] = str(taxi.id).ljust(2)
 
         # Añadir las filas al mapa
@@ -545,7 +544,7 @@ class ECCentral:
 
         self.register_customer(customer_id, customer_location, destination) 
 
-        available_taxi = self.select_available_taxi()
+        available_taxi = self.select_available_taxi(customer_id)
         if available_taxi and available_taxi.status == "FREE":
             self.assign_taxi_to_customer(available_taxi, customer_id, location_key, destination)
             self.map_changed = True  
@@ -555,7 +554,7 @@ class ECCentral:
             return False
 
 
-    def select_available_taxi(self):
+    def select_available_taxi(self,customer):
         """Selecciona el primer taxi disponible con estado 'FREE'."""
         while True:
             self.load_taxis()
@@ -567,7 +566,8 @@ class ECCentral:
                 logger.info(f"Taxi disponible encontrado: {available_taxi.id}")
                 return available_taxi
             else:
-                logger.warning("No se encontró ningún taxi disponible.")
+                print(f"Ningun taxi encontrado para el cliente'{customer}', probando de nuevo en 3 segundos")
+                time.sleep(3)
 
         
     def update_customer(self, customer_id, taxi):
