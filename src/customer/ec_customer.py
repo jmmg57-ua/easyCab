@@ -6,14 +6,15 @@ from kafka import KafkaProducer, KafkaConsumer
 from kafka.errors import KafkaError
 
 class Customer:
-    def __init__(self, kafka_broker, customer_id, services_file):
+    def __init__(self, kafka_broker, customer_id, services_file, customer_location):
         self.kafka_broker = kafka_broker
         self.customer_id = customer_id
         self.services_file = services_file
         self.producer = None
         self.consumer = None
+        self.customer_location = [int(coord) for coord in customer_location.split(',')]  
         
-        # Set up logging
+       
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - Customer %(message)s')
         self.logger = logging.getLogger(__name__)
         
@@ -23,7 +24,6 @@ class Customer:
         retry_count = 0
         while retry_count < 5:
             try:
-                # Set up Kafka Producer
                 self.producer = KafkaProducer(
                     bootstrap_servers=[self.kafka_broker],
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
@@ -31,13 +31,12 @@ class Customer:
                 )
                 self.logger.info("Kafka producer set up successfully")
 
-                # Set up Kafka Consumer for responses
                 self.consumer = KafkaConsumer(
                     'taxi_responses',
                     bootstrap_servers=[self.kafka_broker],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-                    group_id=self.customer_id,  # Unique group ID for this customer
-                    auto_offset_reset='earliest'
+                    group_id=f'customer_{self.customer_id}', 
+                    auto_offset_reset='latest'
                 )
                 self.logger.info("Kafka consumer set up successfully")
                 return
@@ -59,10 +58,11 @@ class Customer:
             return []
 
     def request_service(self, destination):
+        """Envía una solicitud de servicio al tópico 'taxi_requests'."""
         request = {
             'customer_id': self.customer_id,
             'destination': destination,
-            'timestamp': time.time()
+            'customer_location': self.customer_location
         }
         try:
             self.producer.send('taxi_requests', request)
@@ -71,21 +71,40 @@ class Customer:
         except KafkaError as e:
             self.logger.error(f"Failed to send service request: {e}")
 
-    def wait_for_confirmation(self):
+    def wait_for_confirmation(self, destination):
         """
-        Wait for a confirmation from CENTRAL, either 'OK' or 'KO' for the current service request.
+        Espera una confirmación de servicio del tópico 'taxi_responses'.
+        Retorna True si se acepta, False si se rechaza.
         """
-        self.logger.info("Waiting for confirmation from CENTRAL...")
+        self.logger.info(f"Waiting for confirmation from CENTRAL for destination {destination}...")
+        for message in self.consumer:
+            response = message.value
+            if response['customer_id'] == self.customer_id:
+                status = response['status']
+                if status == 'OK':
+                    self.logger.info(f"Service accepted for destination {destination}: {response}")
+                    return True
+                elif status == 'KO':
+                    self.logger.info(f"Service rejected for destination {destination}: {response}")
+                    return False
+                
+    def wait_till_finished(self):
+        """Espera hasta que el taxi notifique la finalización del servicio."""
+        self.logger.info("Waiting for service completion confirmation...")
         for message in self.consumer:
             response = message.value
             if response.get('customer_id') == self.customer_id:
-                status = response.get('status')
-                if status == 'OK':
-                    self.logger.info(f"Service accepted: {response}")
+                if response.get('status') == "END":
+                    self.logger.info(f"Service completed: {response}")
+                    self.customer_location = response.get('final_position')
                     return True
-                elif status == 'KO':
-                    self.logger.info(f"Service rejected: {response}")
-                    return False
+                elif response.get('status') == "SENSOR":
+                    self.logger.warning("The taxi sensor stopped working. The trip will continue shortly.")
+                elif response.get('status') == "TAXI":
+                    self.logger.warning("The taxi isn't working. Assigning another one.")
+                    return True  # Permitir reasignación
+        return False
+
 
     def run(self):
         services = self.read_services()
@@ -93,30 +112,41 @@ class Customer:
             self.logger.warning("No services found in the file. Exiting.")
             return
 
-#CAMBIAR comprobar asignacion y que termina el servicio
-        for service in services:
-            self.request_service(service)
-            confirmation = self.wait_for_confirmation()
+        for destination in services:
+            self.logger.info(f"Requesting service to {destination}.")
+            self.request_service(destination)
+            
+            confirmation = self.wait_for_confirmation(destination)
 
             if confirmation:
-                self.logger.info(f"Service to {service} asigned successfully.")
+                self.logger.info(f"Service to {destination} assigned successfully.")
+                
+                completed = self.wait_till_finished()
+                if completed:
+                    self.logger.info(f"Service to {destination} completed. Wait 4 seconds before requesting the next service")
+                    self.customer_location = destination
+                    self.logger.info(f"")
+                    self.logger.info(f"Updated customer location to {self.customer_location}")
+                    time.sleep(4)
+                else:
+                    self.logger.warning(f"Service to {destination} haven't been completed.")
+
             else:
-                self.logger.warning(f"Service to {service} was rejected.")
-
-            time.sleep(4)  # Wait 4 seconds before requesting the next service
-
+                self.logger.warning(f"Service to destination {destination} was rejected.")
+                
+            time.sleep(2)      
         self.logger.info("All services requested. Exiting.")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("Usage: python EC_Customer.py <Kafka_Broker> <Customer_ID> <Services_File>")
+    if len(sys.argv) != 5:
+        print("Usage: python EC_Customer.py <Kafka_Broker> <Customer_ID> <Services_File> <Customer_Location>")
         sys.exit(1)
 
     kafka_broker = sys.argv[1]
     customer_id = sys.argv[2]
     services_file = sys.argv[3]
-    location = sys.argv[4]
+    customer_location = sys.argv[4]
 
-    customer = Customer(kafka_broker, customer_id, services_file)
+    customer = Customer(kafka_broker, customer_id, services_file, customer_location)
     customer.run()
 
