@@ -35,8 +35,9 @@ class Customer:
                     'taxi_responses',
                     bootstrap_servers=[self.kafka_broker],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+                    enable_auto_commit=False,
                     group_id=f'customer_{self.customer_id}', 
-                    auto_offset_reset='latest'
+                    auto_offset_reset='earliest'
                 )
                 self.logger.info("Kafka consumer set up successfully")
                 return
@@ -92,31 +93,22 @@ class Customer:
 
         for message in self.consumer:
             response = message.value
-            if response.get('customer_id') == self.customer_id and response.get('status') == "END":
-                self.logger.info(f"Received response: {response}")
-                self.customer_location = response.get('final_position')
-                self.logger.info("Service completed.")
-                return True  
-            elif response.get('customer_id') == self.customer_id and response.get('status') == "SENSOR":
-                self.logger.warning("The taxi sensor stopped working, wait please, the trip will continue shortly.")
-
-            elif response.get('customer_id') == self.customer_id and response.get('status') == "TAXI":
-                self.logger.warning("The taxi isn't working, we will asign you another one.")
-                return True
-            
-            elif response.get('customer_id') == self.customer_id and response.get('status') == "CHANGE":
-                self.logger.info(f"Your destination has been changed to {response.get('destination')}")
+            if response.get('customer_id') == self.customer_id:
+                print(f"HE RECIBIDO MENSAJE: {response}")
+                status = response.get('status')
+                if status == "END":
+                    self.logger.info(f"Service completed: {response}")
+                    self.customer_location = response.get('final_position')
+                    return True
+                elif status == "SENSOR":
+                    self.logger.warning("Taxi sensor stopped working; waiting for reconnection.")
+                elif status == "CHANGE":
+                    self.logger.info(f"Destination changed to {response.get('destination')}")
+                elif status == "STOP":
+                    self.logger.info("Taxi stopped by central order.")
+                elif status == "RESUME":
+                    self.logger.info("Taxi resumed journey.")
                 
-            elif response.get('customer_id') == self.customer_id and response.get('status') == "STOP":
-                self.logger.info(f"The taxi stopped by a controlled order")
-
-            elif response.get('customer_id') == self.customer_id and response.get('status') == "RESUME":
-                self.logger.info("The taxi continues moving to your destination")
-
-            elif response.get('customer_id') == self.customer_id and response.get('status') == "RETURN":
-                self.logger.info(f"Your destination has been changed to {response.get('destination')}")
-                return True
-            
         self.logger.warning("Listener stopped unexpectedly.")
         return False
 

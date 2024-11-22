@@ -192,19 +192,18 @@ class ECCentral:
 
     
     def notify_customer(self, taxi):
-        customer_id = str(taxi.customer_assigned) if isinstance(taxi.customer_assigned, list) else taxi.customer_assigned
-        response = {
-            'customer_id': customer_id,
-            'status': "END",
-            'assigned_taxi': taxi.id,
-            'final_position': taxi.position
-        }
         try:
-            self.producer.send('taxi_responses', response)
-            self.producer.flush()
-            logger.info(f"Trip completed sending to customer {customer_id}: {response}")
+            response = {
+                'customer_id': taxi.customer_assigned,
+                'status': "END",
+                'assigned_taxi': taxi.id,
+                'final_position': taxi.position
+            }
+            self.producer.send('taxi_responses', response).get(timeout=3)  # Bloquea hasta que el mensaje se envíe
+            logger.info(f"Trip completed sending to customer {taxi.customer_assigned}: {response}")
         except KafkaError as e:
-            logger.error(f"Failed to send confirmation to customer {customer_id}: {e}")
+            logger.error(f"Failed to notify customer {taxi.customer_assigned}: {e}")
+
 
     
     def update_map(self, update):
@@ -250,6 +249,7 @@ class ECCentral:
             if picked_off==1:
                 self.locations[customer_assigned].position = taxi.position 
                 self.customers[customer_assigned].picked_off = 1
+                self.customers[customer_assigned].status = "OK"
             return taxi
         else:
             logger.warning(f"No taxi found with id {taxi_id}")
@@ -304,7 +304,7 @@ class ECCentral:
                 state = "OK. Sin taxi asignado"
             elif customer.status == "WAIT":
                 state = f"OK. Esperando a Taxi {customer.taxi_assigned}"
-            else:
+            elif customer.picked_off == 1:
                 state = f"OK. Taxi {customer.taxi_assigned}"
 
             client_lines.append(f"{customer_id:<4}{customer.destination:<10}{state:<15}")
