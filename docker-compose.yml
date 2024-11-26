@@ -110,46 +110,54 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_s
-    depends_on:
-      - dengine1
-    command: >
-      python ec_s.py dengine1 9001
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
+    #command: >
+     # python ec_s.py dengine1 9001
 
   sensor2:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_s
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
     depends_on:
       - dengine2
-    command: >
-      python ec_s.py dengine2 9002
+    #command: >
+     # python ec_s.py dengine2 9002
 
   sensor3:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_s
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
     depends_on:
       - dengine3
-    command: >
-      python ec_s.py dengine3 9003
+    #command: >
+     # python ec_s.py dengine3 9003
 
   sensor4:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_s
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
     depends_on:
       - dengine4
-    command: >
-      python ec_s.py dengine4 9004
+    #command: >
+     # python ec_s.py dengine4 9004
 
   sensor5:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_s
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
     depends_on:
       - dengine5
-    command: >
-      python ec_s.py dengine5 9005
+    #command: >
+     # python ec_s.py dengine5 9005
 
 
 

@@ -6,6 +6,7 @@ import random
 import logging
 
 
+
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
@@ -37,21 +38,30 @@ class Sensors:
                 logger.error(f"Error sending status: {e}")
                 break
 
-    def random_incident_simulation(self):
+
+    def handle_input(self):
         while self.running:
-            if random.random() < 0: 
-                self.status = "KO"
-                logger.info("Random incident simulated. Status set to KO")
-            else:
-                self.status = "OK" 
-                time.sleep(3) 
+            try:
+                print("Press any key to toggle status between 'KO' and 'OK'...")
+                input_recieved = input()
+                if input_recieved:
+                    if self.status == "OK":
+                        self.status = "KO"
+                        logger.info("Sensor status changed to KO.")
+                    else:
+                        self.status = "OK"
+                        logger.info("Sensor status changed to OK.")
+                    
+            except Exception as e:
+                logger.error(f"Error handling input: {e}")
+                self.running = False
 
     def run(self):
         if not self.connect_to_digital_engine():
             return
 
         threading.Thread(target=self.send_status, daemon=True).start()
-        threading.Thread(target=self.random_incident_simulation, daemon=True).start()
+        threading.Thread(target=self.handle_input, daemon=True).start()
         
         try:
             while self.running:

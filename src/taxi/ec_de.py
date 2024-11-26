@@ -120,26 +120,30 @@ class DigitalEngine:
 
 
     def process_instruction(self, instruction):
-        if instruction['type'] == 'MOVE':
+        if instruction['type'] == 'STOP':
+            logger.info("INSTRUCCION STOP")
+            self.color = "RED"
+            self.send_position_update()  # Notify central about the stop
+            return  # No further actions until RESUME is received
+
+        elif instruction['type'] == 'RESUME':
+            logger.info("INSTRUCCION RESUME")
+            self.color = "GREEN"
+            self.send_position_update()
+
+        elif instruction['type'] == 'MOVE':
             self.pickup = instruction['pickup']
             logger.info("INSTRUCCION MOVE")
+            self.status = "BUSY"
+            self.color = "GREEN"
+            self.customer_asigned = instruction['customer_id']
             if isinstance(instruction['destination'], (list, tuple)):
                 self.destination = instruction['destination']
             else:
                 logger.error(f"Invalid destination format: {instruction['destination']}")
                 return
-            self.status = "BUSY"
-            self.color = "GREEN"
-            self.customer_asigned = instruction['customer_id']
             self.move_to_destination()
-        elif instruction['type'] == 'STOP':
-            logger.info("INSTRUCCION STOP")
-            self.color = "RED"
-            self.send_position_update()
-        elif instruction['type'] == 'RESUME':
-            logger.info("INSTRUCCION RESUME")
-            self.color = "GREEN"
-            self.send_position_update()
+
         elif instruction['type'] == 'RETURN_TO_BASE':
             logger.info("INSTRUCCION RETURN")
             self.pickup = 0
@@ -150,6 +154,7 @@ class DigitalEngine:
             logger.info("Leaving the customer and returning to base")
             self.send_position_update()
             self.move_to_destination()
+
         elif instruction['type'] == 'CHANGE':
             logger.info("INSTRUCCION CHANGE")
             if isinstance(instruction['destination'], (list, tuple)):
@@ -159,7 +164,7 @@ class DigitalEngine:
                 self.move_to_destination()
             else:
                 logger.error(f"Invalid destination format: {instruction['destination']}")
-                return
+
 
     def move_to_destination(self):
         try:
@@ -167,28 +172,41 @@ class DigitalEngine:
                 logger.error(f"Invalid destination: destination={self.destination}")
                 return
 
-            while self.position != self.pickup and self.color == "GREEN" and self.sensor_connected and self.picked_off == 0:
+            # Move to pickup location
+            while self.position != self.pickup and self.sensor_connected and self.picked_off == 0:
+                if self.color == "RED":  # Stop movement if color is RED
+                    logger.info("Taxi movement interrupted due to STOP instruction (color is RED).")
+                    return
                 self.move_towards(self.pickup)
 
+            # Mark the customer as picked up
             if self.position == self.pickup:
                 self.picked_off = 1
+                logger.info(f"Customer picked up at position {self.position}. Moving to destination.")
 
-            while self.position != self.destination and self.color == "GREEN" and self.sensor_connected and self.picked_off == 1:
+            # Move to the destination
+            while self.position != self.destination and self.sensor_connected and self.picked_off == 1:
+                if self.color == "RED":  # Stop movement if color is RED
+                    logger.info("Taxi movement interrupted due to STOP instruction (color is RED).")
+                    return
                 self.move_towards(self.destination)
 
+            # Finalize the trip if at the destination
             if self.position == self.destination:
-                self.color = "RED"
+                self.color = "RED"  # Set to RED at the destination
                 self.status = "END"
                 logger.info("TRIP ENDED!!")
                 self.send_position_update()
                 self.customer_asigned = "x"
-                time.sleep(4)
+                time.sleep(4)  # Simulate drop-off time
                 self.picked_off = 0
                 self.status = "FREE"
+                self.color = "GREEN"  # Reset color for the next trip
                 logger.info("Taxi is now FREE")
                 self.send_position_update()
         except Exception as e:
             logger.error(f"Error in move_to_destination: {e}")
+
 
 
             

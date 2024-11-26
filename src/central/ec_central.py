@@ -337,42 +337,24 @@ class ECCentral:
     def stop_continue(self, taxi_id):
         if taxi_id in self.taxis:
             try:
-
-                if self.taxis[taxi_id].stopped ==  False:
-                    instruction = {
+                instruction_type = 'STOP' if self.taxis[taxi_id].color == "GREEN" else 'RESUME'
+                instruction = {
                     'taxi_id': taxi_id,
-                    'type': 'STOP',
-                    }
-                    self.taxis[taxi_id].stopped = True
-                    print(f"Central ordered the taxi {taxi_id} to STOP")
-                    
-                    notification = {
-                        'customer_id': self.taxis[taxi_id].customer_assigned,
-                        'status': "STOP",
-                        'assigned_taxi': taxi_id,
-                    }
+                    'type': instruction_type,
+                }
+                # Toggle color based on current state
+                self.taxis[taxi_id].color = "RED" if instruction_type == 'STOP' else "GREEN"
+                logger.info(f"Central ordered taxi {taxi_id} to {instruction_type}")
+                self.producer.send('taxi_instructions', instruction).get(timeout=3)  # Ensure Kafka delivery
                 
-                    print(f"Notifying customer '{self.taxis[taxi_id].customer_assigned}'")
+                notification = {
+                    'customer_id': self.taxis[taxi_id].customer_assigned,
+                    'status': instruction_type,
+                    'assigned_taxi': taxi_id,
+                }
+            
+                print(f"Notifying customer '{self.taxis[taxi_id].customer_assigned}'")
 
-                    
-                else:
-                    instruction = {
-                    'taxi_id': taxi_id,
-                    'type': 'RESUME',
-                    }
-                    self.taxis[taxi_id].stopped = False
-                    print(f"Central ordered the taxi {taxi_id} to CONTINUE")
-
-                    notification = {
-                        'customer_id': self.taxis[taxi_id].customer_assigned,
-                        'status': "RESUME",
-                        'assigned_taxi': taxi_id,
-                    }
-                
-                    print(f"Notifying customer '{self.taxis[taxi_id].customer_assigned}'")
-
-
-                self.producer.send('taxi_instructions', instruction)
                 self.producer.send('taxi_responses', notification)
             except KafkaError as e:
                 logger.error(f"Error in the order communication for taxi {taxi_id} {e}")
