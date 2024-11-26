@@ -33,6 +33,7 @@ class DigitalEngine:
         self.picked_off = 0
         self.central_disconnected = False
         self.sensor_connected = False  # Estado inicial de conexión del sensor
+        self.processing_instruction = False
         self.setup_kafka()
 
     def setup_kafka(self):
@@ -130,6 +131,7 @@ class DigitalEngine:
             logger.info("INSTRUCCION RESUME")
             self.color = "GREEN"
             self.send_position_update()
+            self.move_to_destination()
 
         elif instruction['type'] == 'MOVE':
             self.pickup = instruction['pickup']
@@ -172,40 +174,74 @@ class DigitalEngine:
                 logger.error(f"Invalid destination: destination={self.destination}")
                 return
 
-            # Move to pickup location
-            while self.position != self.pickup and self.sensor_connected and self.picked_off == 0:
-                if self.color == "RED":  # Stop movement if color is RED
-                    logger.info("Taxi movement interrupted due to STOP instruction (color is RED).")
-                    return
+            # Mover al punto de recogida si no está allí y no ha recogido al cliente
+            while self.position != self.pickup and self.picked_off == 0:
+                if not self.sensor_connected or self.color == "RED":  # Detenerse si el sensor no está conectado o está en ROJO
+                    logger.info("Taxi movement interrupted. Waiting for RESUME or sensor reconnection.")
+                    self.processing_instruction = False
+                    time.sleep(1)  # Pausa antes de volver a comprobar
+                    continue  # Continuar el bucle para reevaluar el estado
+
                 self.move_towards(self.pickup)
 
-            # Mark the customer as picked up
+            # Marcar al cliente como recogido
             if self.position == self.pickup:
                 self.picked_off = 1
                 logger.info(f"Customer picked up at position {self.position}. Moving to destination.")
 
-            # Move to the destination
-            while self.position != self.destination and self.sensor_connected and self.picked_off == 1:
-                if self.color == "RED":  # Stop movement if color is RED
-                    logger.info("Taxi movement interrupted due to STOP instruction (color is RED).")
-                    return
+            # Mover al destino
+            while self.position != self.destination and self.picked_off == 1:
+                if not self.sensor_connected or self.color == "RED":  # Detenerse si el sensor no está conectado o está en ROJO
+                    logger.info("Taxi movement interrupted. Waiting for RESUME or sensor reconnection.")
+                    self.processing_instruction = False
+                    time.sleep(1)  # Pausa antes de volver a comprobar
+                    continue  # Continuar el bucle para reevaluar el estado
+
                 self.move_towards(self.destination)
 
-            # Finalize the trip if at the destination
+            # Finalizar el viaje si llega al destino
             if self.position == self.destination:
-                self.color = "RED"  # Set to RED at the destination
-                self.status = "END"
-                logger.info("TRIP ENDED!!")
-                self.send_position_update()
-                self.customer_asigned = "x"
-                time.sleep(4)  # Simulate drop-off time
-                self.picked_off = 0
-                self.status = "FREE"
-                self.color = "GREEN"  # Reset color for the next trip
-                logger.info("Taxi is now FREE")
-                self.send_position_update()
+                self.finalize_trip()
+
         except Exception as e:
             logger.error(f"Error in move_to_destination: {e}")
+
+    def finalize_trip(self):
+        """Handle trip completion and reset taxi state."""
+        try:
+            self.color = "RED"  # Stop the taxi after completing the trip
+            self.status = "END"  # Mark trip as ended
+            logger.info("TRIP ENDED!!")
+            
+            # Notify central of trip completion
+            update = {
+                "customer_id": self.customer_asigned,
+                "status": "END",
+                "assigned_taxi": self.id,
+                "final_position": self.position
+            }
+            self.kafka_producer.send('taxi_updates', value=update)
+            logger.info(f"Trip completed sending to customer {self.customer_asigned}: {update}")
+
+            time.sleep(4)
+
+            # Reset taxi state
+            self.customer_asigned = "x"  # Reset to no assigned customer
+            self.picked_off = 0
+            self.status = "FREE"
+            self.destination = None
+            self.pickup = None
+            self.color = "GREEN"  # Ready for the next trip
+
+            # Notify central of the taxi being free
+            self.send_position_update()
+
+        except KeyError as e:
+            logger.error(f"Key error when processing update: missing key {e}")
+        except Exception as e:
+            logger.error(f"Error finalizing trip: {e}")
+
+
 
 
 
@@ -441,12 +477,18 @@ class DigitalEngine:
                     self.handle_sensor_disconnection()
                     break
 
-                if data == "KO" and self.color == "GREEN" and self.customer_asigned != "x":
+                if data == "KO":
                     self.color = "RED"
+                    self.processing_instruction = True
+                    logger.info("Taxi set to STOP. Awaiting RESUME command.")
                     self.send_position_update()
-                elif data == "OK" and self.color == "RED" and self.customer_asigned != "x":
+
+                elif data == "OK":
                     self.color = "GREEN"
-                    self.send_position_update()
+                    if not self.processing_instruction:
+                        logger.info("Taxi set to RESUME.")
+                        self.processing_instruction = True
+                        self.move_to_destination()
 
             except (ConnectionResetError, ConnectionAbortedError) as e:
                 logger.error(f"Connection error: {e}")

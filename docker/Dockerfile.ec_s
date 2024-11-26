@@ -14,5 +14,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar los archivos necesarios para el Sensor
 COPY ./src/taxi/ec_s.py /app
 
-# Exponer el puerto necesario para la comunicación con EC_DE
-EXPOSE 7070
+ENTRYPOINT ["/bin/bash"]
+
