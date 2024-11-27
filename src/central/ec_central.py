@@ -262,6 +262,13 @@ class ECCentral:
             self.customers[taxi.customer_assigned].status = "SERVICED"
             self.save_taxis()
             self.notify_customer(taxi)
+            time.sleep(3)
+            taxi.customer_assigned = "x"  # Reset to no assigned customer
+            taxi.picked_off = 0
+            taxi.status = "FREE"
+            taxi.color = "RED"  # Ready for the next trip
+            self.save_taxis()
+
         
     def generate_table(self):
         """Genera la tabla de estado de taxis y clientes con el menú fijo 12 líneas debajo del título."""
@@ -731,6 +738,9 @@ class ECCentral:
         # Iniciar hilos para las funcionalidades existentes
         auth_thread = threading.Thread(target=self.start_server_socket, daemon=True)
         auth_thread.start()
+
+        for partition in self.consumer.assignment():
+            self.consumer.seek_to_end(partition)
 
         kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
         kafka_thread.start()

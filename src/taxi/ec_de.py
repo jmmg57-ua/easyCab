@@ -25,7 +25,6 @@ class DigitalEngine:
         self.status = "FREE"   
         self.color = "RED"     
         self.position = [1, 1]  
-        self.pickup = 0
         self.destination = None
         self.customer_asigned = "x"
         self.locations = {}
@@ -34,6 +33,8 @@ class DigitalEngine:
         self.central_disconnected = False
         self.sensor_connected = False  # Estado inicial de conexión del sensor
         self.processing_instruction = False
+        self.trip_ended_sent = False  # Flag para evitar duplicados
+
         self.setup_kafka()
 
     def setup_kafka(self):
@@ -134,6 +135,7 @@ class DigitalEngine:
             self.move_to_destination()
 
         elif instruction['type'] == 'MOVE':
+            self.trip_ended_sent = False
             self.pickup = instruction['pickup']
             logger.info("INSTRUCCION MOVE")
             self.status = "BUSY"
@@ -209,32 +211,35 @@ class DigitalEngine:
     def finalize_trip(self):
         """Handle trip completion and reset taxi state."""
         try:
-            self.color = "RED"  # Stop the taxi after completing the trip
-            self.status = "END"  # Mark trip as ended
-            logger.info("TRIP ENDED!!")
-            
-            # Notify central of trip completion
-            update = {
-                "customer_id": self.customer_asigned,
-                "status": "END",
-                "assigned_taxi": self.id,
-                "final_position": self.position
-            }
-            self.kafka_producer.send('taxi_updates', value=update)
-            logger.info(f"Trip completed sending to customer {self.customer_asigned}: {update}")
+            if not self.trip_ended_sent:
 
-            time.sleep(4)
+                self.color = "RED"  # Stop the taxi after completing the trip
+                self.status = "END"  # Mark trip as ended
+                logger.info("TRIP ENDED!!")
+                
+                # Notify central of trip completion
+                update = {
+                    "customer_id": self.customer_asigned,
+                    "status": "END",
+                    "taxi_id": self.taxi_id,
+                    "position": self.position,
+                    "color" : self.color,
+                    "picked_off" : self.picked_off
+                }
+                self.producer.send('taxi_updates', value=update)
+                logger.info(f"Trip completed sending to customer {self.customer_asigned}: {update}")
 
-            # Reset taxi state
-            self.customer_asigned = "x"  # Reset to no assigned customer
-            self.picked_off = 0
-            self.status = "FREE"
-            self.destination = None
-            self.pickup = None
-            self.color = "GREEN"  # Ready for the next trip
+                time.sleep(4)
 
-            # Notify central of the taxi being free
-            self.send_position_update()
+                # Reset taxi state
+                self.customer_asigned = "x"  # Reset to no assigned customer
+                self.picked_off = 0
+                self.status = "FREE"
+                self.destination = None
+                self.color = "RED"  # Ready for the next trip
+
+                # Notify central of the taxi being free
+                self.send_position_update()
 
         except KeyError as e:
             logger.error(f"Key error when processing update: missing key {e}")
@@ -518,6 +523,9 @@ class DigitalEngine:
             return
 
         logger.info("Digital Engine is running...")
+        
+        for partition in self.consumer.assignment():
+            self.consumer.seek_to_end(partition)
         
         threading.Thread(target=self.kafka_listener, daemon=True).start()
         threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
