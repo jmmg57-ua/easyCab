@@ -262,7 +262,6 @@ class ECCentral:
             self.customers[taxi.customer_assigned].status = "SERVICED"
             self.save_taxis()
             self.notify_customer(taxi)
-            time.sleep(3)
             taxi.customer_assigned = "x"  # Reset to no assigned customer
             taxi.picked_off = 0
             taxi.status = "FREE"
@@ -349,7 +348,7 @@ class ECCentral:
                     'taxi_id': taxi_id,
                     'type': instruction_type,
                 }
-                # Toggle color based on current state
+                # Toggle color based on movement (red parado, green en movimiento)
                 self.taxis[taxi_id].color = "RED" if instruction_type == 'STOP' else "GREEN"
                 logger.info(f"Central ordered taxi {taxi_id} to {instruction_type}")
                 self.producer.send('taxi_instructions', instruction).get(timeout=3)  # Ensure Kafka delivery
