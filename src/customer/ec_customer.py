@@ -59,6 +59,7 @@ class Customer:
             return []
 
     def request_service(self, destination):
+        """Envía una solicitud de servicio al tópico 'taxi_requests'."""
         request = {
             'customer_id': self.customer_id,
             'destination': destination,
@@ -71,20 +72,21 @@ class Customer:
         except KafkaError as e:
             self.logger.error(f"Failed to send service request: {e}")
 
-    def wait_for_confirmation(self):
+    def wait_for_confirmation(self, destination):
         """
-        Wait for a confirmation from CENTRAL, either 'OK' or 'KO' for the current service request.
+        Espera una confirmación de servicio del tópico 'taxi_responses'.
+        Retorna True si se acepta, False si se rechaza.
         """
-        self.logger.info("Waiting for confirmation from CENTRAL...")
+        self.logger.info(f"Waiting for confirmation from CENTRAL for destination {destination}...")
         for message in self.consumer:
             response = message.value
             if response['customer_id'] == self.customer_id:
                 status = response['status']
                 if status == 'OK':
-                    self.logger.info(f"Service accepted: {response}")
+                    self.logger.info(f"Service accepted for destination {destination}: {response}")
                     return True
                 elif status == 'KO':
-                    self.logger.info(f"Service rejected: {response}")
+                    self.logger.info(f"Service rejected for destination {destination}: {response}")
                     return False
                 
     def wait_till_finished(self):
@@ -118,7 +120,6 @@ class Customer:
         if not services:
             self.logger.warning("No services found in the file. Exiting.")
             return
-
         for service in services:
             
             self.request_service(service)
