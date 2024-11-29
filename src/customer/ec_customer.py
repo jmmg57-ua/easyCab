@@ -35,8 +35,9 @@ class Customer:
                     'taxi_responses',
                     bootstrap_servers=[self.kafka_broker],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+                    enable_auto_commit=False,
                     group_id=f'customer_{self.customer_id}', 
-                    auto_offset_reset='latest'
+                    auto_offset_reset='earliest'
                 )
                 self.logger.info("Kafka consumer set up successfully")
                 return
@@ -62,7 +63,7 @@ class Customer:
         request = {
             'customer_id': self.customer_id,
             'destination': destination,
-            'customer_location': self.customer_location
+            'customer_location': self.customer_location     
         }
         try:
             self.producer.send('taxi_requests', request)
@@ -89,20 +90,28 @@ class Customer:
                     return False
                 
     def wait_till_finished(self):
-        """Espera hasta que el taxi notifique la finalización del servicio."""
+        """Espera hasta recibir una confirmación de finalización en 'taxi_responses'."""
         self.logger.info("Waiting for service completion confirmation...")
+
         for message in self.consumer:
             response = message.value
             if response.get('customer_id') == self.customer_id:
-                if response.get('status') == "END":
+                print(f"HE RECIBIDO MENSAJE: {response}")
+                status = response.get('status')
+                if status == "END":
                     self.logger.info(f"Service completed: {response}")
                     self.customer_location = response.get('final_position')
                     return True
-                elif response.get('status') == "SENSOR":
-                    self.logger.warning("The taxi sensor stopped working. The trip will continue shortly.")
-                elif response.get('status') == "TAXI":
-                    self.logger.warning("The taxi isn't working. Assigning another one.")
-                    return True  # Permitir reasignación
+                elif status == "SENSOR":
+                    self.logger.warning("Taxi sensor stopped working; waiting for reconnection.")
+                elif status == "CHANGE":
+                    self.logger.info(f"Destination changed to {response.get('destination')}")
+                elif status == "STOP":
+                    self.logger.info("Taxi stopped by central order.")
+                elif status == "RESUME":
+                    self.logger.info("Taxi resumed journey.")
+                
+        self.logger.warning("Listener stopped unexpectedly.")
         return False
 
 
@@ -111,30 +120,25 @@ class Customer:
         if not services:
             self.logger.warning("No services found in the file. Exiting.")
             return
-
-        for destination in services:
-            self.logger.info(f"Requesting service to {destination}.")
-            self.request_service(destination)
+        for service in services:
             
-            confirmation = self.wait_for_confirmation(destination)
+            self.request_service(service)
+            
+            confirmation = self.wait_for_confirmation()
 
             if confirmation:
-                self.logger.info(f"Service to {destination} assigned successfully.")
+                self.logger.info(f"Service to {service} asigned successfully.")
                 
                 completed = self.wait_till_finished()
                 if completed:
-                    self.logger.info(f"Service to {destination} completed. Wait 4 seconds before requesting the next service")
-                    self.customer_location = destination
-                    self.logger.info(f"")
-                    self.logger.info(f"Updated customer location to {self.customer_location}")
+                    self.logger.info(f"Wait 4 seconds before requesting the next service")
                     time.sleep(4)
                 else:
-                    self.logger.warning(f"Service to {destination} haven't been completed.")
+                    self.logger.warning(f"Service to {service} haven't been completed.")
 
             else:
-                self.logger.warning(f"Service to destination {destination} was rejected.")
+                self.logger.warning(f"Service to {service} was rejected.")
                 
-            time.sleep(2)      
         self.logger.info("All services requested. Exiting.")
 
 if __name__ == "__main__":

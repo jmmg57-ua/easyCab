@@ -1,0 +1,7 @@
+{
+    "python.analysis.extraPaths": [
+        "./src/central",
+        "./src/customer",
+        "./src/taxi"
+    ]
+}

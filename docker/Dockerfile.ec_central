@@ -1,0 +1,18 @@
+# Usar imagen base de Python
+FROM python:3.9-slim
+
+# Crear un directorio de trabajo
+WORKDIR /app
+
+# Copiar solo el archivo de requisitos primero
+COPY requirements.txt ./
+
+# Instalar dependencias
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar el resto de los archivos después de instalar dependencias
+COPY ./src/central ./
+
+ENTRYPOINT ["/bin/bash"]
+
+

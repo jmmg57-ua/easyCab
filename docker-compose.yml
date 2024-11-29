@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   zookeeper:
     image: wurstmeister/zookeeper
@@ -14,16 +12,21 @@ services:
   kafka:
     image: wurstmeister/kafka
     ports:
-      - "9092:9092"
+      - "9092:9092"       # Puerto para acceso interno dentro de la red Docker
+      - "29092:29092"     # Puerto para acceso externo desde la máquina host
     environment:
-      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_LISTENERS: PLAINTEXT_INTERNAL://0.0.0.0:9092,PLAINTEXT_EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://192.168.1.131:29092 #Cambiar external por IP que hostee kafka
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_CREATE_TOPICS: "customer_requests:1:1,test_topic:1:1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CREATE_TOPICS: "taxi_updates:1:1,taxi_requests:1:1,taxi_responses:1:1,updated_map:1:1,taxi_instructions:1:1,map_updates:1:1"
     depends_on:
       zookeeper:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "kafka-topics.sh", "--list", "--zookeeper", "zookeeper:2181"]
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka:9092"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -31,10 +34,186 @@ services:
   central:
     build:
       context: .
-      dockerfile: docker/Dockerfile.central
+      dockerfile: docker/Dockerfile.ec_central
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true  
+    entrypoint: /bin/bash
+    ports:
+      - "8000:8000"
     environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092   # Cambiar por ip y port host kafka
+    volumes:
+      - ./data:/data  
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'from kafka import KafkaProducer; KafkaProducer(bootstrap_servers=[\"kafka:9092\"])'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      #Cambiar en command kafka por la ip y port 92092 del pc host de kafka
+    #command: >
+     # python ec_central.py kafka:9092 8000
+
+
+  dengine1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_de
+    ports:
+      - "9001:9001"
+    #Cambiar en command kafka por la ip y port del host de kafka
+    #Cambiar en command central por la ip de central
+    command: >
+      python ec_de.py central 8000 kafka:9092 sensor1 9001 1
+
+  dengine2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_de
+    ports:
+      - "9002:9002"
+    #Cambiar en command kafka por la ip y port del host de kafka
+    command: >
+      python ec_de.py central 8000 kafka:9092 sensor2 9002 2
+
+  dengine3:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_de
+    ports:
+      - "9003:9003"
+    #Cambiar en command kafka por la ip y port del host de kafka
+    command: >
+      python ec_de.py central 8000 kafka:9092 sensor3 9003 3
+
+  dengine4:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_de
+    ports:
+      - "9004:9004"
+    #Cambiar en command kafka por la ip y port del host de kafka
+    command: >
+      python ec_de.py central 8000 kafka:9092 sensor4 9004 4
+
+  dengine5:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_de
+    ports:
+      - "9005:9005"
+    #Cambiar en command kafka por la ip y port del host de kafka
+    command: >
+      python ec_de.py central 8000 kafka:9092 sensor5 9005 5
+
+
+  sensor1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_s
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
+    #command: >
+     # python ec_s.py dengine1 9001
+
+  sensor2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_s
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
     depends_on:
-      kafka:
-        condition: service_healthy
-    restart: on-failure:3
+      - dengine2
+    #command: >
+     # python ec_s.py dengine2 9002
+
+  sensor3:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_s
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
+    depends_on:
+      - dengine3
+    #command: >
+     # python ec_s.py dengine3 9003
+
+  sensor4:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_s
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
+    depends_on:
+      - dengine4
+    #command: >
+     # python ec_s.py dengine4 9004
+
+  sensor5:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_s
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
+    depends_on:
+      - dengine5
+    #command: >
+     # python ec_s.py dengine5 9005
+
+
+
+
+  customer1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_customer
+    depends_on:
+      - kafka
+    volumes:
+      - ./data:/data 
+    command: >
+      python ec_customer.py kafka:9092 a /data/services1.txt 1,4
+
+  customer2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_customer
+    depends_on:
+      - kafka
+    volumes:
+      - ./data:/data 
+    command: >
+      python ec_customer.py kafka:9092 b /data/services2.txt 2,8
+
+  customer3:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_customer
+    depends_on:
+      - kafka
+    volumes:
+      - ./data:/data 
+    command: >
+      python ec_customer.py kafka:9092 c /data/services3.txt 3,12
+
+  customer4:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_customer
+    depends_on:
+      - kafka
+    volumes:
+      - ./data:/data 
+    command: >
+      python ec_customer.py kafka:9092 d /data/services4.txt 4,16
+
+  customer5:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_customer
+    depends_on:
+      - kafka
+    volumes:
+      - ./data:/data 
+    command: >
+      python ec_customer.py kafka:9092 e /data/services5.txt 5,20
+
