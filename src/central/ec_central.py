@@ -32,7 +32,6 @@ class Customer:
     destination: Tuple[int, int]
     taxi_assigned: int
     picked_off: int
-    auth_status: int
 
 @dataclass
 class Location:
@@ -89,16 +88,15 @@ class ECCentral:
 
     def load_map_config(self):
         try:
-            with open('/data/map_config.txt', 'r') as f:
-                for line in f:
-                    loc_id, x, y = line.strip().split()
-                    x, y = int(x), int(y)
-                    self.locations[loc_id] = Location(loc_id, (x, y), "BLUE")
-                    self.map[y - 1, x - 1] = loc_id  # Ajuste del índice para la matriz
+            with open('/data/map_config.json', 'r') as f:
+                config = json.load(f)
+            for loc_id, loc_data in config.items():
+                x, y = loc_data['position']
+                self.locations[loc_id] = Location(loc_id, (x, y), "BLUE")
+                self.map[y - 1, x - 1] = loc_id
             logger.info("Map configuration loaded successfully.")
         except Exception as e:
             logger.error(f"Error loading map configuration: {e}")
-
 
     def load_taxis(self):
         """Carga los taxis desde el fichero."""
@@ -263,6 +261,7 @@ class ECCentral:
             self.customers[taxi.customer_assigned].status = "SERVICED"
             self.save_taxis()
             self.notify_customer(taxi)
+            time.sleep(3)
             taxi.customer_assigned = "x"  # Reset to no assigned customer
             taxi.picked_off = 0
             taxi.status = "FREE"
@@ -298,7 +297,8 @@ class ECCentral:
             elif taxi.customer_assigned == "x":
                 state = "OK. Libre"
             else:
-                state = f"OK. Servicio {taxi.customer_assigned}
+                state = f"OK. Servicio {taxi.customer_assigned}"
+
             taxi_lines.append(f"{taxi_id:<4}{destination:<10}{state:<15}")
 
         client_lines = []
@@ -348,7 +348,7 @@ class ECCentral:
                     'taxi_id': taxi_id,
                     'type': instruction_type,
                 }
-                # Toggle color based on movement (red parado, green en movimiento)
+                # Toggle color based on current state
                 self.taxis[taxi_id].color = "RED" if instruction_type == 'STOP' else "GREEN"
                 logger.info(f"Central ordered taxi {taxi_id} to {instruction_type}")
                 self.producer.send('taxi_instructions', instruction).get(timeout=3)  # Ensure Kafka delivery
@@ -470,6 +470,7 @@ class ECCentral:
 
         # Mostrar el resultado en la consola
         print("\n".join(combined_lines))
+
 
 
     def broadcast_map(self):
@@ -772,4 +773,6 @@ if __name__ == "__main__":
     listen_port = int(sys.argv[2])
     central = ECCentral(kafka_bootstrap_servers, listen_port)
     central.run()
+
+
 
