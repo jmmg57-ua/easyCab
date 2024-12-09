@@ -7,8 +7,6 @@ import logging
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.errors import KafkaError  
 import numpy as np
-import queue
-
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,13 +29,11 @@ class DigitalEngine:
         self.customer_asigned = "x"
         self.locations = {}
         self.taxis = {}
-        self.instruction_queue = queue.Queue()  # Cola para las instrucciones
         self.picked_off = 0
         self.central_disconnected = False
         self.sensor_connected = False  # Estado inicial de conexión del sensor
         self.processing_instruction = False
         self.trip_ended_sent = False  # Flag para evitar duplicados
-        self.ko = 0
 
         self.setup_kafka()
 
@@ -110,7 +106,7 @@ class DigitalEngine:
                         continue
                     if data['taxi_id'] == self.taxi_id:
                         logger.info(f"Received message on topic 'taxi_instructions'")
-                        self.instruction_queue.put(data)
+                        self.process_instruction(data)
                 elif message.topic == 'map_updates':
                     logger.info("Received message on topic 'map_updates'")
                     self.handle_map_updates(message.value)
@@ -256,19 +252,18 @@ class DigitalEngine:
 
             
     def move_towards(self, target):
-        if self.ko == 0:
-            if self.position[0] < target[0]:
-                self.position[0] += 1
-            elif self.position[0] > target[0]:
-                self.position[0] -= 1
-            
-            if self.position[1] < target[1]:
-                self.position[1] += 1
-            elif self.position[1] > target[1]:
-                self.position[1] -= 1
+        if self.position[0] < target[0]:
+            self.position[0] += 1
+        elif self.position[0] > target[0]:
+            self.position[0] -= 1
+        
+        if self.position[1] < target[1]:
+            self.position[1] += 1
+        elif self.position[1] > target[1]:
+            self.position[1] -= 1
 
-            self.position[0] = self.position[0] % 21
-            self.position[1] = self.position[1] % 21  
+        self.position[0] = self.position[0] % 21
+        self.position[1] = self.position[1] % 21  
         
         self.send_position_update()
         # self.draw_map()
@@ -277,16 +272,13 @@ class DigitalEngine:
     def send_position_update(self):
         # Verificar si el socket está abierto antes de enviar
         if self.sensor_socket and self.sensor_socket.fileno() != -1:
-            tempstatus = self.status
-            if self.ko == 1:
-                tempstatus = "KO"
             update = {
                 'taxi_id': self.taxi_id,
-                'status': tempstatus,
+                'status': self.status,
                 'color': self.color,
                 'position': self.position,
                 'customer_id': self.customer_asigned,
-                'picked_off': self.picked_off,
+                'picked_off': self.picked_off
             }
             logger.info("Sending update through 'taxi_updates'")
             try:
@@ -490,18 +482,14 @@ class DigitalEngine:
                     self.handle_sensor_disconnection()
                     break
 
-                if data == "KO" and self.ko == 0:
-                    self.ko = 1
+                if data == "KO":
                     self.color = "RED"
-                    self.status = "KO"
                     self.processing_instruction = True
                     logger.info("Taxi set to STOP. Awaiting RESUME command.")
                     self.send_position_update()
 
-                elif data == "OK" and self.ko == 1:
-                    self.ko = 0
+                elif data == "OK":
                     self.color = "GREEN"
-                    self.status = "OK"
                     if not self.processing_instruction:
                         logger.info("Taxi set to RESUME.")
                         self.processing_instruction = True
@@ -562,5 +550,6 @@ if __name__ == "__main__":
     
     digital_engine = DigitalEngine(ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id)
     digital_engine.run()
+
 
 
