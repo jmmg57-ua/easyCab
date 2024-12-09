@@ -98,6 +98,7 @@ class ECCentral:
         except Exception as e:
             logger.error(f"Error loading map configuration: {e}")
 
+
     def load_taxis(self):
         """Carga los taxis desde el fichero."""
         self.taxis = {}  # Asegurar que sea un diccionario vacío antes de cargar
@@ -773,6 +774,3 @@ if __name__ == "__main__":
     listen_port = int(sys.argv[2])
     central = ECCentral(kafka_bootstrap_servers, listen_port)
     central.run()
-
-
-
