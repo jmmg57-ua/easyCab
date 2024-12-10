@@ -124,6 +124,18 @@ class DigitalEngine:
             logger.error(f"General error in kafka_listener: {e}")
             time.sleep(5)
 
+    def comprobador_cola(self):
+        while True:
+            try:
+                # Obtener la próxima instrucción de la cola
+                instruction = self.instruction_queue.get()
+                logger.info(f"Processing instruction: {instruction}")
+                self.process_instruction(instruction)
+            except queue.Empty:
+                # Si no hay instrucciones, continuar
+                continue
+            except Exception as e:
+                logger.error(f"Error while processing instruction: {e}")
 
     def process_instruction(self, instruction):
         if instruction['type'] == 'STOP':
@@ -154,7 +166,7 @@ class DigitalEngine:
 
         elif instruction['type'] == 'RETURN_TO_BASE':
             logger.info("INSTRUCCION RETURN")
-            self.pickup = 0
+            self.picked_off = 1
             self.destination = [1, 1]
             self.status = "BUSY"
             self.color = "GREEN"
@@ -173,6 +185,14 @@ class DigitalEngine:
             else:
                 logger.error(f"Invalid destination format: {instruction['destination']}")
 
+    def check_for_interrupt(self):
+        if not self.instruction_queue.empty():
+            instruction = self.instruction_queue.get()  # Extraer nueva instrucción
+            logger.info(f"Interrupting current operation for new instruction: {instruction}")
+            self.process_instruction(instruction)
+            return True
+        return False
+
 
     def move_to_destination(self):
         try:
@@ -180,14 +200,10 @@ class DigitalEngine:
                 logger.error(f"Invalid destination: destination={self.destination}")
                 return
 
-            # Mover al punto de recogida si no está allí y no ha recogido al cliente
+            # Mover al punto de recogida
             while self.position != self.pickup and self.picked_off == 0:
-                if not self.sensor_connected or self.color == "RED":  # Detenerse si el sensor no está conectado o está en ROJO
-                    logger.info("Taxi movement interrupted. Waiting for RESUME or sensor reconnection.")
-                    self.processing_instruction = False
-                    time.sleep(1)  # Pausa antes de volver a comprobar
-                    continue  # Continuar el bucle para reevaluar el estado
-
+                if self.check_for_interrupt():
+                    break  # Interrumpir el movimiento si hay una nueva instrucción
                 self.move_towards(self.pickup)
 
             # Marcar al cliente como recogido
@@ -197,12 +213,8 @@ class DigitalEngine:
 
             # Mover al destino
             while self.position != self.destination and self.picked_off == 1:
-                if not self.sensor_connected or self.color == "RED":  # Detenerse si el sensor no está conectado o está en ROJO
-                    logger.info("Taxi movement interrupted. Waiting for RESUME or sensor reconnection.")
-                    self.processing_instruction = False
-                    time.sleep(1)  # Pausa antes de volver a comprobar
-                    continue  # Continuar el bucle para reevaluar el estado
-
+                if self.check_for_interrupt():
+                    break  # Interrumpir el movimiento si hay una nueva instrucción
                 self.move_towards(self.destination)
 
             # Finalizar el viaje si llega al destino
@@ -211,6 +223,7 @@ class DigitalEngine:
 
         except Exception as e:
             logger.error(f"Error in move_to_destination: {e}")
+
 
     def finalize_trip(self):
         """Handle trip completion and reset taxi state."""
@@ -272,10 +285,11 @@ class DigitalEngine:
         
         self.send_position_update()
         # self.draw_map()
-        time.sleep(1.5)  
+        time.sleep(1)  
 
     def send_position_update(self):
         # Verificar si el socket está abierto antes de enviar
+        logger.debug(f"Sending update: Position {self.position}, Status {self.status}, Color {self.color}")
         if self.sensor_socket and self.sensor_socket.fileno() != -1:
             tempstatus = self.status
             if self.ko == 1:
@@ -536,11 +550,10 @@ class DigitalEngine:
 
         logger.info("Digital Engine is running...")
         
-        for partition in self.consumer.assignment():
-            self.consumer.seek_to_end(partition)
-        
         threading.Thread(target=self.kafka_listener, daemon=True).start()
         threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
+        threading.Thread(target=self.comprobador_cola, daemon=True).start()
+
         # threading.Thread(target=self.listen_to_central, args=(conn,), daemon=True).start()
 
         while True:
