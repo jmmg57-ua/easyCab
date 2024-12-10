@@ -264,12 +264,7 @@ class ECCentral:
             if taxi.customer_assigned != "x":
                 self.notify_customer(taxi)
             #DEBERIA VALER SOLO EN EC DE:
-            time.sleep(3)
-            taxi.customer_assigned = "x"  # Reset to no assigned customer
-            taxi.picked_off = 0
-            taxi.status = "FREE"
-            taxi.color = "RED"  # Ready for the next trip
-            self.save_taxis()
+            
 
         
     def generate_table(self):
