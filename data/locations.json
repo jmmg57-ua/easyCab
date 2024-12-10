@@ -1,0 +1,12 @@
+[
+    {
+        "id": "L1",
+        "position": [1, 1],
+        "color": "BLUE"
+    },
+    {
+        "id": "L2",
+        "position": [20, 20],
+        "color": "GREEN"
+    }
+]

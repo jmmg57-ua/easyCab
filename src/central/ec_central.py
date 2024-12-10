@@ -9,6 +9,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Dict, Tuple
 import threading
+import queue
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,12 +48,19 @@ class ECCentral:
         self.consumer = None
         self.map_size = (20, 20)
         self.map = np.full(self.map_size, ' ', dtype=str)
+        self.taxis_file = '/data/taxis.json'  
+        self.locations_file = '/data/locations.json'
+        self.customers_file = '/data/customers.json'
         self.locations: Dict[str, Location] = {}
-        self.taxis_file = '/data/taxis.txt'  
         self.taxis: Dict[int, Taxi] = {}  
-        self.customers: Dict[int, Customer] = {}
+        self.customers: Dict[str, Customer] = {}
         self.customer_destinations = {}
         self.map_changed = False  
+
+        self.write_queue = queue.Queue()  # Cola para tareas de escritura
+        self.writer_thread = threading.Thread(target=self._writer_worker, daemon=True)
+        self.writer_thread.start()
+
         self.setup_kafka()
 
     def setup_kafka(self):
@@ -85,6 +93,28 @@ class ECCentral:
         logger.critical("Failed to set up Kafka after 5 attempts. Exiting.")
         sys.exit(1)
 
+    def _writer_worker(self):
+        """Hilo independiente para manejar la escritura de datos en archivos JSON."""
+        while True:
+            try:
+                task = self.write_queue.get()  # Espera hasta que haya una tarea
+                if task is None:  # Finalizar el hilo si se pasa None
+                    break
+
+                file_path, data = task
+                with open(file_path, 'w') as f:
+                    json.dump(data, f, indent=4)
+                logger.info(f"Data written to {file_path} successfully.")
+            except Exception as e:
+                logger.error(f"Error in writer worker: {e}")
+            finally:
+                self.write_queue.task_done()  # Marca la tarea como completada
+
+    def stop_writer(self):
+        """Detiene el hilo de escritura."""
+        self.write_queue.put(None)  # Enviar una señal para detener el hilo
+        self.writer_thread.join()
+        logger.info("Writer thread stopped successfully.")
 
     def load_map_config(self):
         try:
@@ -99,35 +129,124 @@ class ECCentral:
             logger.error(f"Error loading map configuration: {e}")
 
     def load_taxis(self):
-        """Carga los taxis desde el fichero."""
+        """Carga los taxis desde el archivo JSON."""
         self.taxis = {}  # Asegurar que sea un diccionario vacío antes de cargar
         try:
             with open(self.taxis_file, 'r') as f:
-                for line in f:
-                    taxi_id, status, color, pos_x, pos_y, customer_assigned, picked_off, auth_status = line.strip().split('#')
-                    self.taxis[int(taxi_id)] = Taxi(
-                        id=int(taxi_id),
-                        status=status,
-                        color=color,
-                        position=(int(pos_x), int(pos_y)),
-                        customer_assigned=customer_assigned,
-                        picked_off=int(picked_off),
-                        auth_status=int(auth_status)
+                data = json.load(f)
+                for taxi_data in data:
+                    taxi = Taxi(
+                        id=taxi_data['id'],
+                        status=taxi_data['status'],
+                        color=taxi_data['color'],
+                        position=tuple(taxi_data['position']),
+                        customer_assigned=taxi_data['customer_assigned'],
+                        picked_off=taxi_data['picked_off'],
+                        auth_status=taxi_data['authenticated']
                     )
+                    self.taxis[taxi.id] = taxi
             logger.info("Taxis loaded successfully.")
         except FileNotFoundError:
-            logger.warning("Taxis file not found. Starting with an empty list.")
+            logger.warning("Taxis JSON file not found. Starting with an empty list.")
         except Exception as e:
-            logger.error(f"Error loading taxis from file: {e}")
+            logger.error(f"Error loading taxis from JSON file: {e}")
 
     def save_taxis(self):
-        """Guarda los taxis en el fichero."""
+        """Envía los datos de los taxis a la cola de escritura."""
         try:
-            with open(self.taxis_file, 'w') as f:
-                for taxi in self.taxis.values():
-                    f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}#{taxi.customer_assigned}#{taxi.picked_off}#{taxi.auth_status}\n")
+            data = [
+                {
+                    'id': taxi.id,
+                    'status': taxi.status,
+                    'color': taxi.color,
+                    'position': list(taxi.position),
+                    'customer_assigned': taxi.customer_assigned,
+                    'picked_off': taxi.picked_off,
+                    'authenticated': taxi.auth_status
+                }
+                for taxi in self.taxis.values()
+            ]
+            self.write_queue.put((self.taxis_file, data))
+            logger.info("Taxis queued for saving.")
         except Exception as e:
-            logger.error(f"Error saving taxis to file: {e}")
+            logger.error(f"Error queuing taxis for saving: {e}")
+
+        
+    def load_locations(self):
+        """Carga las localizaciones desde el archivo JSON."""
+        self.locations = {}
+        try:
+            with open(self.locations_file, 'r') as f:
+                data = json.load(f)
+                for location_data in data:
+                    location = Location(
+                        id=location_data['id'],
+                        position=tuple(location_data['position']),
+                        color=location_data['color']
+                    )
+                    self.locations[location.id] = location
+            logger.info("Locations loaded successfully.")
+        except FileNotFoundError:
+            logger.warning("Locations JSON file not found. Starting with an empty list.")
+        except Exception as e:
+            logger.error(f"Error loading locations from JSON file: {e}")
+
+    def save_locations(self):
+        """Envía los datos de las localizaciones a la cola de escritura."""
+        try:
+            data = [
+                {
+                    'id': loc.id,
+                    'position': list(loc.position),
+                    'color': loc.color
+                }
+                for loc in self.locations.values()
+            ]
+            self.write_queue.put((self.locations_file, data))
+            logger.info("Locations queued for saving.")
+        except Exception as e:
+            logger.error(f"Error queuing locations for saving: {e}")
+
+    def load_customers(self):
+        """Carga los clientes desde el archivo JSON."""
+        self.customers = {}
+        try:
+            with open(self.customers_file, 'r') as f:
+                data = json.load(f)
+                for customer_data in data:
+                    customer = Customer(
+                        id=customer_data['id'],
+                        status=customer_data['status'],
+                        position=tuple(customer_data['position']),
+                        destination=tuple(customer_data['destination']),
+                        taxi_assigned=customer_data['taxi_assigned'],
+                        picked_off=customer_data['picked_off']
+                    )
+                    self.customers[customer.id] = customer
+            logger.info("Customers loaded successfully.")
+        except FileNotFoundError:
+            logger.warning("Customers JSON file not found. Starting with an empty list.")
+        except Exception as e:
+            logger.error(f"Error loading customers from JSON file: {e}")
+
+    def save_customers(self):
+        """Envía los datos de los clientes a la cola de escritura."""
+        try:
+            data = [
+                {
+                    'id': customer.id,
+                    'status': customer.status,
+                    'position': list(customer.position),
+                    'destination': list(customer.destination),
+                    'taxi_assigned': customer.taxi_assigned,
+                    'picked_off': customer.picked_off
+                }
+                for customer in self.customers.values()
+            ]
+            self.write_queue.put((self.customers_file, data))
+            logger.info("Customers queued for saving.")
+        except Exception as e:
+            logger.error(f"Error queuing customers for saving: {e}")
 
     def handle_taxi_auth(self, conn, addr):
         """Maneja la autenticación del taxi."""
@@ -260,10 +379,10 @@ class ECCentral:
             self.map_changed = True
             if taxi.customer_assigned != "x":
                 self.customers[taxi.customer_assigned].status = "SERVICED"
+                self.save_customers()  # Guardar cambios en el archivo JSON
             self.save_taxis()
             if taxi.customer_assigned != "x":
                 self.notify_customer(taxi)
-            #DEBERIA VALER SOLO EN EC DE:
             
 
         
@@ -276,7 +395,7 @@ class ECCentral:
         table_lines = []
         table_lines.append("               *** EASY CAB ***        ")
         table_lines.append("     TAXIS                           CLIENTES   ")
-        table_lines.append(f"{'Id':<4}{'Destino':<10}{'Estado':<15}   {'Id':<4}{'Destino':<10}{'Estado':<15}")
+        table_lines.append(f"{'Id':<4}{'Destino':<20}{'Estado':<15}   {'Id':<4}{'Destino':<20}{'Estado':<15}")
 
         taxi_lines = []
         for taxi in self.taxis.values():
@@ -297,11 +416,10 @@ class ECCentral:
             else:
                 state = f"OK. Servicio {taxi.customer_assigned}"
 
-            taxi_lines.append(f"{taxi_id:<4}{destination:<10}{state:<15}")
+            taxi_lines.append(f"{taxi_id:<4}{str(destination):<20}{state:<15}")
 
         client_lines = []
-        for customer_id, destination in self.customers.items():
-            customer = self.customers[customer_id]
+        for customer_id, customer in self.customers.items():
             if customer.status == "SERVICED":
                 state = "OK. Servicio finalizado"
             elif customer.status == "UNATTENDED":
@@ -311,11 +429,11 @@ class ECCentral:
             elif customer.picked_off == 1:
                 state = f"OK. Taxi {customer.taxi_assigned}"
 
-            client_lines.append(f"{customer_id:<4}{customer.destination:<10}{state:<15}")
+            client_lines.append(f"{customer_id:<4}{str(customer.destination):<20}{state:<15}")
 
         max_lines = max(len(taxi_lines), len(client_lines))
         for i in range(max_lines):
-            taxi_info = taxi_lines[i] if i < len(taxi_lines) else " " * 30
+            taxi_info = taxi_lines[i] if i < len(taxi_lines) else " " * 40
             client_info = client_lines[i] if i < len(client_lines) else ""
             table_lines.append(f"{taxi_info} | {client_info}")
 
@@ -337,6 +455,7 @@ class ECCentral:
         table_lines.extend(menu_lines)
 
         return "\n".join(table_lines)
+
 
     def stop_continue(self, taxi_id):
         if taxi_id in self.taxis:
@@ -489,27 +608,33 @@ class ECCentral:
                 logger.error(f"Error broadcasting map: {e}")
 
     def register_customer(self, customer_id, position, destination):
-        if not isinstance(customer_id, str) or not isinstance(position, (list, tuple)) or not isinstance(destination, str):
+        """Registra un cliente y actualiza el archivo JSON de clientes."""
+        if not isinstance(customer_id, str) or not isinstance(position, (list, tuple)) or not isinstance(destination, (list, tuple)):
             logger.error(f"Invalid customer data: id={customer_id}, position={position}, destination={destination}")
             return False
         
         if customer_id not in self.customers:
+            # Crear nuevo cliente
             self.customers[customer_id] = Customer(
                 id=customer_id,
                 status="UNATTENDED",
                 position=tuple(position),
-                destination=destination,
+                destination=tuple(destination),
                 taxi_assigned=0,
                 picked_off=0,
             )
-            return True
         else:
+            # Actualizar cliente existente
             customer = self.customers[customer_id]
-            customer.status ="UNATTENDED"
-            customer.position=tuple(position)
-            customer.destination=destination
-            customer.taxi_assigned=0
-            customer.picked_off=0
+            customer.status = "UNATTENDED"
+            customer.position = tuple(position)
+            customer.destination = tuple(destination)
+            customer.taxi_assigned = 0
+            customer.picked_off = 0
+
+        self.save_customers()  # Guardar cambios en el archivo JSON
+        return True
+
 
 
     def process_customer_request(self, request):
@@ -571,6 +696,7 @@ class ECCentral:
             customer = self.customers[customer_id]
             customer.taxi_assigned = taxi
             customer.status = "WAIT"
+            self.save_customers()  # Guardar cambios en el archivo JSON
             
 
     def assign_taxi_to_customer(self, taxi, customer_id, customer_location, destination):
@@ -742,6 +868,8 @@ class ECCentral:
     def run(self):
         self.load_map_config()
         self.load_taxis()
+        self.load_customers()
+        self.load_locations()
         logger.info("EC_Central is running...")
 
         # Mostrar el mapa inicial
@@ -772,6 +900,7 @@ class ECCentral:
         except KeyboardInterrupt:
             logger.info("Shutting down...")
             self.close_producer()
+            self.stop_writer()  # Detener el hilo de escritura
             if self.consumer:
                 self.consumer.close()
                 logger.info("Kafka consumer closed.")
