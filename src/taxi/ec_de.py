@@ -8,6 +8,8 @@ from kafka import KafkaConsumer, KafkaProducer
 from kafka.errors import KafkaError  
 import numpy as np
 import queue
+import requests
+
 
 
 logging.basicConfig(level=logging.INFO,
@@ -15,12 +17,14 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger()
 
 class DigitalEngine:
-    def __init__(self, ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id):
+    def __init__(self, ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id, ec_registry_ip, ec_registry_port):
         self.ec_central_ip = ec_central_ip
         self.ec_central_port = ec_central_port
         self.kafka_broker = kafka_broker
         self.ec_s_ip = ec_s_ip
         self.ec_s_port = ec_s_port
+        self.ec_registry_ip = ec_registry_ip
+        self.ec_registry_port = ec_registry_port
         self.taxi_id = taxi_id
         self.map_size = (20, 20)
         self.map = np.full(self.map_size, ' ', dtype=str) 
@@ -536,6 +540,55 @@ class DigitalEngine:
                 logger.warning(f"Reconnection attempt failed: {e}")
                 time.sleep(5)  # Espera antes de intentar reconectar
 
+    def interact_with_registry(self):
+        """Menú para interactuar con el módulo Registry."""
+        registry_url = f"http://{registry_ip}:{registry_port}"  # Cambia por la IP y puerto reales de Registry
+
+        while True:
+            print("\nBienvenido al Digital Engine")
+            print("1. Registrarse")
+            print("2. Darse de baja")
+            print("3. Salir")
+            choice = input("Seleccione una opción: ")
+
+            if choice == "1":  # Registrarse
+                data = {
+                    "taxi_id": self.taxi_id,
+                    "color": self.color,
+                    "position": self.position
+                }
+                try:
+                    response = requests.post(f"{registry_url}/register", json=data)
+                    if response.status_code == 201:  # Registrado con éxito
+                        print("Registro exitoso. Esperando confirmación de Registry...")
+                        return  # Continuar con el flujo del programa
+                    elif response.status_code == 409:  # Ya registrado
+                        print("El taxi ya está registrado.")
+                    else:
+                        print(f"Error al registrarse: {response.json().get('error', 'Desconocido')}")
+                except requests.exceptions.RequestException as e:
+                    print(f"Error al conectar con Registry: {e}")
+
+            elif choice == "2":  # Darse de baja
+                try:
+                    response = requests.delete(f"{registry_url}/deregister/{self.taxi_id}")
+                    if response.status_code == 200:  # Baja exitosa
+                        print("Se dio de baja exitosamente. Cerrando el programa.")
+                        sys.exit(0)
+                    elif response.status_code == 404:  # No registrado
+                        print("El taxi no está registrado.")
+                    else:
+                        print(f"Error al darse de baja: {response.json().get('error', 'Desconocido')}")
+                except requests.exceptions.RequestException as e:
+                    print(f"Error al conectar con Registry: {e}")
+
+            elif choice == "3":  # Salir
+                print("Saliendo del programa...")
+                sys.exit(0)
+
+            else:
+                print("Opción inválida. Intente de nuevo.")
+
 
     def run(self):
        
@@ -561,7 +614,7 @@ class DigitalEngine:
 
 if __name__ == "__main__":
 
-    if len(sys.argv) != 7:
+    if len(sys.argv) != 9:
         logger.error(f"Arguments received: {sys.argv}")
         logger.error("Usage: python EC_DE.py <EC_Central_IP> <EC_Central_Port> <Kafka_Broker> <EC_S_IP> <EC_S_Port> <Taxi_ID>")
         sys.exit(1)
@@ -572,8 +625,10 @@ if __name__ == "__main__":
     ec_s_ip = sys.argv[4]
     ec_s_port = int(sys.argv[5])
     taxi_id = int(sys.argv[6])
+    ec_registry_ip = sys.argv[7]
+    ec_registry_port = int(sys.argv[8])
     
-    digital_engine = DigitalEngine(ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id)
+    digital_engine = DigitalEngine(ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id, ec_registry_ip, ec_registry_ip)
     digital_engine.run()
 
 
