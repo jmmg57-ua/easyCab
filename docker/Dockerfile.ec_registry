@@ -1,16 +1,18 @@
-FROM python:3.9-slim
+# Usa una imagen base de Node.js ligera
+FROM node:16
 
-# Establecer el directorio de trabajo dentro del contenedor
+# Establece el directorio de trabajo dentro del contenedor
 WORKDIR /app
 
-# Copiar los archivos necesarios para el Digital Engine
-COPY requirements.txt .
+# Copia el archivo package.json y package-lock.json al contenedor
+COPY ./src/registry/package*.json ./
 
-# Instalar las dependencias necesarias (Kafka, sockets, etc.)
-RUN pip install --no-cache-dir -r requirements.txt
+# Instala las dependencias necesarias
+RUN npm install
 
-# Copiar el código fuente de EC_DE al contenedor
-COPY ./src/registry/ec_registry.py /app
+# Copia el resto del código fuente al contenedor
+COPY ./src/registry .
 
-# Exponer el puerto necesario para los sockets (con EC_Central)
+# Expone el puerto que utiliza el servicio Registry
 EXPOSE 10000
+

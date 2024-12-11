@@ -1,0 +1,23 @@
+{
+  "name": "registry",
+  "version": "1.0.0",
+  "description": "API REST para dar de alta/baja taxis en la aplicación EasyCab",
+  "main": "ec_registry.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "REGISTRY"
+  ],
+  "author": "JOSE MANUEL MARTINEZ",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.20.3",
+    "express": "^4.21.2",
+    "typescript": "^5.7.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "nodemon": "^3.1.7"
+  }
+}

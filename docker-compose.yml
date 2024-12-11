@@ -59,13 +59,15 @@ services:
       dockerfile: docker/Dockerfile.ec_registry
     stdin_open: true       # Para habilitar la entrada estándar interactiva
     tty: true  
-    entrypoint: /bin/bash
     ports:
       - "10000:10000"
     volumes:
-      - ./data:/data  
+      - ./data:/data
+      - ./src/registry:/app
+    environment:
+      - REGISTRY_PORT=10000
     command: >
-      python ec_registry.py
+      node ec_registry.js
 
 
   dengine1:
@@ -76,8 +78,8 @@ services:
       - "9001:9001"
     #Cambiar en command kafka por la ip y port del host de kafka
     #Cambiar en command central por la ip de central
-    command: >
-      python ec_de.py central 8000 kafka:9092 sensor1 9001 1
+    #command: >
+     # python ec_de.py central 8000 kafka:9092 sensor1 9001 1
 
   dengine2:
     build:
