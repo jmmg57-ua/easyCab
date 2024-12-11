@@ -53,6 +53,20 @@ services:
     #command: >
      # python ec_central.py kafka:9092 8000
 
+  registry:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_registry
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true  
+    entrypoint: /bin/bash
+    ports:
+      - "10000:10000"
+    volumes:
+      - ./data:/data  
+    command: >
+      python ec_registry.py
+
 
   dengine1:
     build:
