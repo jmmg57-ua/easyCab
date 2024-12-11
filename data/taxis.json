@@ -1,0 +1,63 @@
+[
+    {
+        "id": 1,
+        "status": "KO",
+        "color": "GREEN",
+        "position": [
+            16,
+            19
+        ],
+        "customer_assigned": "c",
+        "picked_off": 1,
+        "authenticated": 1
+    },
+    {
+        "id": 2,
+        "status": "KO",
+        "color": "GREEN",
+        "position": [
+            15,
+            6
+        ],
+        "customer_assigned": "e",
+        "picked_off": 1,
+        "authenticated": 1
+    },
+    {
+        "id": 3,
+        "status": "KO",
+        "color": "GREEN",
+        "position": [
+            19,
+            10
+        ],
+        "customer_assigned": "b",
+        "picked_off": 1,
+        "authenticated": 1
+    },
+    {
+        "id": 4,
+        "status": "KO",
+        "color": "RED",
+        "position": [
+            10,
+            1
+        ],
+        "customer_assigned": "d",
+        "picked_off": 1,
+        "authenticated": 1
+    },
+    {
+        "id": 5,
+        "status": "KO",
+        "color": "GREEN",
+        "position": [
+            10,
+            13
+        ],
+        "customer_assigned": "a",
+        "picked_off": 1,
+        "authenticated": 1
+    }
+]
+]

@@ -48,7 +48,7 @@ class ECCentral:
         self.map_size = (20, 20)
         self.map = np.full(self.map_size, ' ', dtype=str)
         self.locations: Dict[str, Location] = {}
-        self.taxis_file = '/data/taxis.txt'  
+        self.taxis_file = '/data/taxis.json'
         self.taxis: Dict[int, Taxi] = {}  
         self.customers: Dict[int, Customer] = {}
         self.customer_destinations = {}
@@ -99,35 +99,50 @@ class ECCentral:
             logger.error(f"Error loading map configuration: {e}")
 
     def load_taxis(self):
-        """Carga los taxis desde el fichero."""
+        """Carga los taxis desde el archivo JSON."""
         self.taxis = {}  # Asegurar que sea un diccionario vacío antes de cargar
         try:
             with open(self.taxis_file, 'r') as f:
-                for line in f:
-                    taxi_id, status, color, pos_x, pos_y, customer_assigned, picked_off, auth_status = line.strip().split('#')
-                    self.taxis[int(taxi_id)] = Taxi(
-                        id=int(taxi_id),
-                        status=status,
-                        color=color,
-                        position=(int(pos_x), int(pos_y)),
-                        customer_assigned=customer_assigned,
-                        picked_off=int(picked_off),
-                        auth_status=int(auth_status)
+                taxi_data = json.load(f)
+                for taxi in taxi_data:
+                    self.taxis[taxi["id"]] = Taxi(
+                        id=taxi["id"],
+                        status=taxi["status"],
+                        color=taxi["color"],
+                        position=tuple(taxi["position"]),
+                        customer_assigned=taxi["customer_assigned"],
+                        picked_off=int(taxi["picked_off"]),
+                        auth_status=int(taxi["authenticated"])
                     )
-            logger.info("Taxis loaded successfully.")
+            logger.info("Taxis loaded successfully from JSON.")
         except FileNotFoundError:
-            logger.warning("Taxis file not found. Starting with an empty list.")
+            logger.warning("Taxis JSON file not found. Starting with an empty list.")
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON: {e}")
         except Exception as e:
-            logger.error(f"Error loading taxis from file: {e}")
+            logger.error(f"Error loading taxis from JSON file: {e}")
 
     def save_taxis(self):
-        """Guarda los taxis en el fichero."""
+        """Guarda los taxis en el archivo JSON."""
         try:
+            taxi_data = [
+                {
+                    "id": taxi.id,
+                    "status": taxi.status,
+                    "color": taxi.color,
+                    "position": list(taxi.position),
+                    "customer_assigned": taxi.customer_assigned,
+                    "picked_off": int(taxi.picked_off),
+                    "authenticated": int(taxi.auth_status)
+                }
+                for taxi in self.taxis.values()
+            ]
             with open(self.taxis_file, 'w') as f:
-                for taxi in self.taxis.values():
-                    f.write(f"{taxi.id}#{taxi.status}#{taxi.color}#{taxi.position[0]}#{taxi.position[1]}#{taxi.customer_assigned}#{taxi.picked_off}#{taxi.auth_status}\n")
+                json.dump(taxi_data, f, indent=4)
+            logger.info("Taxis saved successfully to JSON.")
         except Exception as e:
-            logger.error(f"Error saving taxis to file: {e}")
+            logger.error(f"Error saving taxis to JSON file: {e}")
+
 
     def handle_taxi_auth(self, conn, addr):
         """Maneja la autenticación del taxi."""
@@ -224,6 +239,7 @@ class ECCentral:
             color = update['color']
             customer_assigned = update['customer_id']
             picked_off = update['picked_off']
+            self.update_customer(customer_assigned, self.taxis[taxi_id])
             taxi_updated = self.update_taxi_state(taxi_id, pos_x, pos_y, status, color, customer_assigned, picked_off)
             self.finalize_trip_if_needed(taxi_updated)
             self.map_changed= True
@@ -245,10 +261,6 @@ class ECCentral:
             taxi.picked_off = picked_off
             self.map_changed = True  
             self.save_taxis()
-            if customer_assigned != "x" and picked_off==1:
-                self.locations[customer_assigned].position = taxi.position 
-                self.customers[customer_assigned].picked_off = 1
-                self.customers[customer_assigned].status = "OK"
             return taxi
         else:
             logger.warning(f"No taxi found with id {taxi_id}")
@@ -569,8 +581,12 @@ class ECCentral:
     def update_customer(self, customer_id, taxi):
         if customer_id in self.customers:
             customer = self.customers[customer_id]
-            customer.taxi_assigned = taxi
+            customer.taxi_assigned = taxi.id
             customer.status = "WAIT"
+            customer.picked_off = taxi.picked_off
+            if customer.picked_off == 1:
+                customer.position = taxi.position
+            self.locations[customer_id].position = customer.position
             
 
     def assign_taxi_to_customer(self, taxi, customer_id, customer_location, destination):
@@ -579,7 +595,7 @@ class ECCentral:
         taxi.color = 'GREEN'
         taxi.customer_assigned = customer_id
         self.save_taxis()
-        self.update_customer(customer_id, taxi.id)
+        self.update_customer(customer_id, taxi)
         self.map_changed = True
         self.notify_customer_assignment(customer_id, taxi)
         self.send_taxi_instruction(taxi, customer_id, customer_location, destination)
