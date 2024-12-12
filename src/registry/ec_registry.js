@@ -1,11 +1,12 @@
+const https = require('https');
 const express = require("express");
 const bodyParser = require("body-parser");
 const fs = require("fs");
 const path = require("path");
 
 // Configuración inicial
-const app = express();
 const port = 10000; // Puerto parametrizable
+const app = express();
 const taxisFilePath = "/data/taxis.json"; // Ruta del archivo JSON
 
 // Verificar si el archivo de datos existe; si no, crearlo
@@ -81,12 +82,26 @@ app.get("/status/:id", (req, res) => {
     return res.status(200).json(taxis[id]);
 });
 
+
 // Listar todos los taxis
 app.get("/taxis", (req, res) => {
     return res.status(200).json(Object.values(taxis));
 });
 
+
+app.get('/', (req,res)=>{
+    res.send("Conexion haciendo uso de https mediante certificado autofirmado.")
+})
 // Arrancar el servidor
-app.listen(port, () => {
-    console.log(`Servidor Registry ejecutándose en el puerto ${port}`);
+https
+.createServer(
+//Se indican el certificado público y la clave privada
+{
+key: fs.readFileSync("certServ.pem"),
+cert: fs.readFileSync("certServ.pem"),
+},
+app
+)
+.listen(port, () => {
+console.log("https Registry API listening: "+port);
 });
