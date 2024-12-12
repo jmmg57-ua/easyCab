@@ -76,7 +76,8 @@ app.post("/register", (req, res) => {
         position: [1, 1],
         customer_assigned: "x",
         picked_off: 0,
-        authenticated: 0
+        authenticated: 0,
+        token: ""
     };
 
     saveTaxisToFile(taxis); // Guardar los cambios

@@ -1,50 +1,15 @@
 {
     "1": {
         "id": 1,
-        "status": "OK",
-        "color": "RED",
+        "status": "BUSY",
+        "color": "GREEN",
         "position": [
-            1,
-            1
+            9,
+            8
         ],
-        "customer_assigned": "x",
+        "customer_assigned": "b",
         "picked_off": 0,
-        "authenticated": 0
-    },
-    "2": {
-        "id": 2,
-        "status": "OK",
-        "color": "RED",
-        "position": [
-            1,
-            1
-        ],
-        "customer_assigned": "x",
-        "picked_off": 0,
-        "authenticated": 0
-    },
-    "3": {
-        "id": 3,
-        "status": "OK",
-        "color": "RED",
-        "position": [
-            1,
-            1
-        ],
-        "customer_assigned": "x",
-        "picked_off": 0,
-        "authenticated": 0
-    },
-    "4": {
-        "id": 4,
-        "status": "OK",
-        "color": "RED",
-        "position": [
-            1,
-            1
-        ],
-        "customer_assigned": "x",
-        "picked_off": 0,
-        "authenticated": 0
+        "authenticated": 1,
+        "token": "d62020b7-407e-4156-a42e-e0b54fda1daa"
     }
 }

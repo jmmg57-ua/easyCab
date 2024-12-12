@@ -62,6 +62,7 @@ class Customer:
         """Envía una solicitud de servicio al tópico 'taxi_requests'."""
         request = {
             'customer_id': self.customer_id,
+            'status': "REQUEST",
             'destination': destination,
             'customer_location': self.customer_location     
         }
@@ -117,6 +118,20 @@ class Customer:
         self.logger.warning("Listener stopped unexpectedly.")
         return False
 
+    def send_completion_message(self):
+        """Envía un mensaje a CENTRAL indicando que el cliente ha terminado todos sus servicios."""
+        completion_message = {
+            'customer_id': self.customer_id,
+            'status': "COMPLETED",
+            'message': "All services completed. Disconnecting."
+        }
+        try:
+            self.producer.send('taxi_requests', completion_message)
+            self.producer.flush()
+            self.logger.info(f"Sent completion message: {completion_message}")
+        except KafkaError as e:
+            self.logger.error(f"Failed to send completion message: {e}")
+
 
     def run(self):
         services = self.read_services()
@@ -143,6 +158,10 @@ class Customer:
                 self.logger.warning(f"Service to {service} was rejected.")
                 
         self.logger.info("All services requested. Exiting.")
+        self.send_completion_message()
+        self.producer.close()
+        self.consumer.close()
+        self.logger.info("Kafka connection closed. Disconnecting...")
 
 if __name__ == "__main__":
     if len(sys.argv) != 5:

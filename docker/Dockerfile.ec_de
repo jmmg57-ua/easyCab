@@ -13,4 +13,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar el código fuente de EC_DE al contenedor
 COPY ./src/taxi/ec_de.py /app
 COPY ./src/taxi/certServ.pem /app
+COPY ./src/taxi/centralCert.pem /app
 

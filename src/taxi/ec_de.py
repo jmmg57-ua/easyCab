@@ -1,3 +1,5 @@
+import os
+import signal
 import socket
 import sys
 import threading
@@ -9,6 +11,7 @@ from kafka.errors import KafkaError
 import numpy as np
 import queue
 import requests
+import ssl
 
 
 
@@ -41,7 +44,7 @@ class DigitalEngine:
         self.processing_instruction = False
         self.trip_ended_sent = False  # Flag para evitar duplicados
         self.ko = 0
-
+        self.central_socket = None
         self.setup_kafka()
 
     def setup_kafka(self):
@@ -76,11 +79,21 @@ class DigitalEngine:
     
     def connect_to_central(self):
         try:
-            self.central_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Crear contexto SSL
+            context = ssl.create_default_context()
+            context.load_verify_locations(cafile='./centralCert.pem')
+
+            # Crear y envolver el socket
+            raw_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.central_socket = context.wrap_socket(raw_socket, server_hostname=self.ec_central_ip)
+
+            # Conectar
             self.central_socket.connect((self.ec_central_ip, self.ec_central_port))
+            logger.info("Secure connection established with EC_Central.")
             return True
+        
         except Exception as e:
-            logger.error(f"Failed to connect to Digital Engine: {e}")
+            logger.error(f"Failed to connect to Central: {e}")
             return False
 
     def set_up_socket_sensor(self):
@@ -90,14 +103,21 @@ class DigitalEngine:
         logger.info(f"Digital Engine for Taxi {self.taxi_id} initialized")
 
     def authenticate(self):
-        auth_message = f"{self.taxi_id}"
-        self.central_socket.send(auth_message.encode())
-        response = self.central_socket.recv(1024).decode()
-        if response == "OK":
-            logger.info(f"Taxi {self.taxi_id} authenticated successfully")
-            return True
-        else:
-            logger.warning(f"Authentication failed for Taxi {self.taxi_id}")
+        try:
+
+            auth_message = f"{self.taxi_id}"
+            self.central_socket.send(auth_message.encode())
+            response = self.central_socket.recv(1024).decode()
+            if response.startswith("TOKEN"):
+                self.token = response.split()[1]
+                logger.info(f"Authenticated successfully. Token recieved")
+                return True
+            else:
+                logger.warning(f"Authentication failed for Taxi {self.taxi_id}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error during authentication: {e}")
             return False
         
     def kafka_listener(self):
@@ -177,6 +197,11 @@ class DigitalEngine:
             logger.info("Leaving the customer and returning to base")
             self.send_position_update()
             self.move_to_destination()
+            # Verificar si el taxi llegó a la base
+            if self.position == [1, 1]:
+                logger.info(f"Taxi {self.taxi_id} has returned to base.")
+                self.disconnect()
+            
 
         elif instruction['type'] == 'CHANGE':
             logger.info("INSTRUCCION CHANGE")
@@ -244,7 +269,8 @@ class DigitalEngine:
                     "taxi_id": self.taxi_id,
                     "position": self.position,
                     "color" : self.color,
-                    "picked_off" : self.picked_off
+                    "picked_off" : self.picked_off,
+                    "token": self.token
                 }
                 self.producer.send('taxi_updates', value=update)
                 logger.info(f"Trip completed sending to customer {self.customer_asigned}: {update}")
@@ -304,6 +330,7 @@ class DigitalEngine:
                 'position': self.position,
                 'customer_id': self.customer_asigned,
                 'picked_off': self.picked_off,
+                'token': self.token
             }
             logger.info("Sending update through 'taxi_updates'")
             try:
@@ -334,7 +361,8 @@ class DigitalEngine:
                 'color': "RED",
                 'position': self.position,
                 'customer_id': self.customer_asigned,
-                'picked_off': self.picked_off
+                'picked_off': self.picked_off,
+                'token': self.token
             }
         logger.info("Sending update through 'taxi_updates'")
         try:
@@ -418,6 +446,7 @@ class DigitalEngine:
                         return
                     elif response.status_code == 409:  # Ya registrado
                         print("El taxi ya está registrado.")
+                        return
                     else:
                         print(f"Error al registrarse: {response.json().get('error', 'Desconocido')}")
                 except requests.exceptions.RequestException as e:
@@ -427,7 +456,7 @@ class DigitalEngine:
                 try:
                     response = requests.delete(f"{registry_url}/deregister/{self.taxi_id}", verify="./certServ.pem")
                     if response.status_code == 200:  # Baja exitosa
-                        print("Se dio de baja exitosamente. Cerrando el programa.")
+                        print("Se dio de baja exitosamente.")
                     elif response.status_code == 404:  # No registrado
                         print("El taxi no está registrado.")
                     else:
@@ -441,6 +470,35 @@ class DigitalEngine:
 
             else:
                 print("Opción inválida. Intente de nuevo.")
+
+    def disconnect(self):
+        """Desconecta el taxi de la central y termina el programa."""
+        logger.info(f"Taxi {self.taxi_id} is disconnecting.")
+        try:
+            # Cerrar conexión con la central
+            if self.central_socket:
+                self.central_socket.close()
+                logger.info("Connection to central closed.")
+
+            # Cerrar conexión con el sensor
+            if self.sensor_socket:
+                self.sensor_socket.close()
+                logger.info("Connection to sensor closed.")
+
+            # Cerrar Kafka producer y consumer
+            if self.producer:
+                self.producer.close()
+                logger.info("Kafka producer closed.")
+            if self.consumer:
+                self.consumer.close()
+                logger.info("Kafka consumer closed.")
+
+        except Exception as e:
+            logger.error(f"Error while disconnecting: {e}")
+
+        finally:
+            logger.info(f"Taxi {self.taxi_id} disconnected successfully.")
+            os.kill(os.getpid(), signal.SIGTERM)
 
 
     def run(self):
