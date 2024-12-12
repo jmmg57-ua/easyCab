@@ -62,7 +62,7 @@ services:
     ports:
       - "10000:10000"
     volumes:
-      - ./data:/data
+      - ./data:/app/data
       - ./src/registry:/app
     environment:
       - REGISTRY_PORT=10000
@@ -74,6 +74,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_de
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
     ports:
       - "9001:9001"
     #Cambiar en command kafka por la ip y port del host de kafka

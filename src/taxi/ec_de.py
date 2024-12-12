@@ -17,13 +17,12 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger()
 
 class DigitalEngine:
-    def __init__(self, ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id, ec_registry_ip, ec_registry_port):
+    def __init__(self, ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id, ec_registry_port):
         self.ec_central_ip = ec_central_ip
         self.ec_central_port = ec_central_port
         self.kafka_broker = kafka_broker
         self.ec_s_ip = ec_s_ip
         self.ec_s_port = ec_s_port
-        self.ec_registry_ip = ec_registry_ip
         self.ec_registry_port = ec_registry_port
         self.taxi_id = taxi_id
         self.map_size = (20, 20)
@@ -313,35 +312,6 @@ class DigitalEngine:
                 logger.error(f"Error sending update: {e}")
         else:
             logger.warning("Socket is closed, cannot send update.")
-        
-    # def process_map_update(self, map_data):
-    #     """Actualiza el mapa local en el Digital Engine usando los datos recibidos."""
-    #     # Limpiar el mapa local antes de cada actualización
-    #     self.map = np.full(self.map_size, ' ', dtype=str)
-
-    #     # Almacenar localizaciones en self.locations y colocarlas en el mapa
-    #     self.locations = {loc_id: location for loc_id, location in map_data['locations'].items()}
-    #     for loc_id, location in self.locations.items():
-    #         x, y = location['position']
-    #         x, y = x - 1, y - 1  # Ajustar índices a 0-19
-    #         if 0 <= x < self.map_size[0] and 0 <= y < self.map_size[1]:
-    #             self.map[y, x] = loc_id.ljust(2)
-
-    #     # Almacenar información de los taxis en self.taxis y colocarlos en el mapa
-    #     self.taxis = {taxi_id: taxi_info for taxi_id, taxi_info in map_data['taxis'].items()}
-    #     for taxi_id, taxi_info in self.taxis.items():
-    #         x, y = taxi_info['position']
-    #         x, y = x - 1, y - 1
-    #         if 0 <= x < self.map_size[0] and 0 <= y < self.map_size[1]:
-    #             self.map[y, x] = str(taxi_id).ljust(2)
-
-    #     # Colocar la posición del taxi actual
-    #     new_x, new_y = self.position[0] - 1, self.position[1] - 1
-    #     if 0 <= new_x < self.map_size[0] and 0 <= new_y < self.map_size[1]:
-    #         self.map[new_y, new_x] = str(self.taxi_id).ljust(2)
-
-    #     logger.info("Map updated in Digital Engine")
-    #     self.draw_map()
 
     def handle_map_updates(self, message):
         """
@@ -352,107 +322,7 @@ class DigitalEngine:
         self.locations = {loc_id: location for loc_id, location in message['locations'].items()}
         self.taxis = {taxi_id: taxi_info for taxi_id, taxi_info in message['taxis'].items()}
 
-        # Verificar y registrar las ubicaciones y taxis recibidos
-        #logger.info(f"Received locations: {self.locations}")
-        #logger.info(f"Received taxis: {self.taxis}")
-
         logger.info("Map updated in Digital Engine")
-        #self.draw_map()  # Dibuja el mapa completo inmediatamente después de recibir la actualización
-
-
-
-    # def draw_map(self, independent=False):
-    #     """Dibuja el mapa en los logs del Digital Engine con estilo similar al de la central.
-    #     Si `independent=True`, solo muestra el taxi propio y las localizaciones."""
-
-    #     logger.info("Drawing map with current state...")
-
-    #     if hasattr(self, 'locations'):
-    #         logger.info(f"Locations to be drawn: {self.locations}")
-    #     if hasattr(self, 'taxis'):
-    #         logger.info(f"Taxis to be drawn: {self.taxis}")
-
-    #     logger.info("Current Map State with Borders:")
-    #     map_lines = [""]
-
-    #     border_row = "#" * (self.map_size[1] * 2 + 2)
-    #     map_lines.append(border_row)
-
-    #     # Crear un mapa vacío con celdas de espacio formateado
-    #     bordered_map = np.full((self.map_size[0], self.map_size[1]), '  ', dtype=str)
-
-    #     # Colocar las localizaciones en el mapa
-    #     for loc_id, location in self.locations.items():
-    #         x, y = location['position']
-    #         x, y = x - 1, y - 1  # Ajustar a índices de 0 a 19
-    #         if 0 <= x < self.map_size[0] and 0 <= y < self.map_size[1]:
-    #             bordered_map[y, x] = loc_id.ljust(2)
-
-    #     # Colocar los taxis en el mapa solo si `independent` es False
-    #     if not independent:
-    #         for taxi_id, taxi_info in self.taxis.items():
-    #             x, y = taxi_info['position']
-    #             x, y = x - 1, y - 1
-    #             if 0 <= x < self.map_size[0] and 0 <= y < self.map_size[1]:
-    #                 bordered_map[y, x] = str(taxi_id).ljust(2)
-
-    #     # Colocar la posición del propio taxi
-    #     new_x, new_y = self.position[0] - 1, self.position[1] - 1
-    #     if 0 <= new_x < self.map_size[0] and 0 <= new_y < self.map_size[1]:
-    #         bordered_map[new_y, new_x] = str(self.taxi_id).ljust(2)
-
-    #     # Crear filas del mapa formateadas con bordes
-    #     for row in bordered_map:
-    #         formatted_row = "#" + "".join([f"{cell} " for cell in row]) + "#"
-    #         map_lines.append(formatted_row)
-
-    #     # Borde inferior
-    #     map_lines.append(border_row)
-
-    #     # Mostrar el mapa en los logs
-    #     logger.info("\n".join(map_lines))
-
-
-    # def continue_independently(self):
-    #     logger.warning("Lost connection with EC_Central. Operating independently.")
-        
-    #     # Moverse hacia el destino utilizando la última instrucción recibida
-    #     while self.position != self.destination:
-
-    #         logger.info("Current Map State with Borders:")
-    #         map_lines = [""]
-    #         border_row = "#" * (self.map_size[1] * 2 + 2)
-    #         map_lines.append(border_row)
-            
-    #         # Crear un mapa que solo contenga la posición del taxi y la localización de destino
-    #         independent_map = np.full(self.map_size, '  ', dtype=str)
-            
-    #         # Añadir la localización de destino en el mapa
-    #         dest_x, dest_y = self.destination[0] - 1, self.destination[1] - 1
-    #         if 0 <= dest_x < self.map_size[0] and 0 <= dest_y < self.map_size[1]:
-    #             independent_map[dest_y, dest_x] = 'D '.ljust(2)
-            
-    #         # Añadir la posición actual del taxi en el mapa
-    #         taxi_x, taxi_y = self.position[0] - 1, self.position[1] - 1
-    #         if 0 <= taxi_x < self.map_size[0] and 0 <= taxi_y < self.map_size[1]:
-    #             independent_map[taxi_y, taxi_x] = str(self.taxi_id).ljust(2)
-
-    #         # Mostrar el mapa en los logs solo con el propio taxi y la localización de destino
-    #         map_lines = ["#" * (self.map_size[1] * 2 + 2)]
-    #         for row in independent_map:
-    #             formatted_row = "#" + "".join([f"{cell} " for cell in row]) + "#"
-    #             map_lines.append(formatted_row)
-    #         map_lines.append("#" * (self.map_size[1] * 2 + 2))
-            
-    #         logger.info("\n".join(map_lines))
-            
-    #         # Pausa antes del próximo movimiento
-    #         time.sleep(1)
-
-    #     # Una vez en el destino, mostrar mensaje final y detener actualizaciones
-    #     logger.info("Taxi has reached its destination independently. No further instructions.")
-    #     self.status = "END"
-
 
 
 
@@ -482,20 +352,6 @@ class DigitalEngine:
         if self.color == "GREEN":
             logger.info("Resuming taxi's journey.")
             self.move_to_destination()
-            
-    # def listen_to_central(self, conn):
-    #     while True:
-    #         try:
-    #             data = conn.recv(1024).decode()
-    #             if not data:  # Si no hay datos, la conexión ha sido cerrada
-    #                 # self.central_disconnected = True
-    #                 # self.continue_independently()
-    #                 break
-    #         except (ConnectionResetError, ConnectionAbortedError) as e:
-    #             logger.error(f"Connection to Central lost: {e}")
-    #             self.central_disconnected = True
-    #             # self.continue_independently()
-    #             break  # Sale del bucle y activa el modo independiente
 
     def listen_for_sensor_data(self, conn, addr):
         logger.info(f"Connected to Sensors at {addr}")
@@ -542,7 +398,7 @@ class DigitalEngine:
 
     def interact_with_registry(self):
         """Menú para interactuar con el módulo Registry."""
-        registry_url = f"http://{registry_ip}:{registry_port}"  # Cambia por la IP y puerto reales de Registry
+        registry_url = f"https://registry:{self.ec_registry_port}"  # Cambia por la IP y puerto reales de Registry
 
         while True:
             print("\nBienvenido al Digital Engine")
@@ -553,15 +409,13 @@ class DigitalEngine:
 
             if choice == "1":  # Registrarse
                 data = {
-                    "taxi_id": self.taxi_id,
-                    "color": self.color,
-                    "position": self.position
+                    "taxi_id": self.taxi_id
                 }
                 try:
-                    response = requests.post(f"{registry_url}/register", json=data)
+                    response = requests.post(f"{registry_url}/register", json=data, verify="./certServ.pem")
                     if response.status_code == 201:  # Registrado con éxito
-                        print("Registro exitoso. Esperando confirmación de Registry...")
-                        return  # Continuar con el flujo del programa
+                        print("Registro exitoso.")
+                        return
                     elif response.status_code == 409:  # Ya registrado
                         print("El taxi ya está registrado.")
                     else:
@@ -571,10 +425,9 @@ class DigitalEngine:
 
             elif choice == "2":  # Darse de baja
                 try:
-                    response = requests.delete(f"{registry_url}/deregister/{self.taxi_id}")
+                    response = requests.delete(f"{registry_url}/deregister/{self.taxi_id}", verify="./certServ.pem")
                     if response.status_code == 200:  # Baja exitosa
                         print("Se dio de baja exitosamente. Cerrando el programa.")
-                        sys.exit(0)
                     elif response.status_code == 404:  # No registrado
                         print("El taxi no está registrado.")
                     else:
@@ -596,6 +449,8 @@ class DigitalEngine:
         logger.info("Waiting for sensor connection...")
         conn, addr = self.sensor_socket.accept()
         
+        self.interact_with_registry()
+
         self.connect_to_central()
         
         if not self.authenticate():
@@ -614,7 +469,7 @@ class DigitalEngine:
 
 if __name__ == "__main__":
 
-    if len(sys.argv) != 9:
+    if len(sys.argv) != 8:
         logger.error(f"Arguments received: {sys.argv}")
         logger.error("Usage: python EC_DE.py <EC_Central_IP> <EC_Central_Port> <Kafka_Broker> <EC_S_IP> <EC_S_Port> <Taxi_ID>")
         sys.exit(1)
@@ -625,10 +480,9 @@ if __name__ == "__main__":
     ec_s_ip = sys.argv[4]
     ec_s_port = int(sys.argv[5])
     taxi_id = int(sys.argv[6])
-    ec_registry_ip = sys.argv[7]
-    ec_registry_port = int(sys.argv[8])
+    ec_registry_port = int(sys.argv[7])
     
-    digital_engine = DigitalEngine(ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id, ec_registry_ip, ec_registry_ip)
+    digital_engine = DigitalEngine(ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id, ec_registry_port)
     digital_engine.run()
 
 
