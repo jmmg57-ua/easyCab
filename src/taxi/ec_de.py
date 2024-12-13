@@ -34,6 +34,8 @@ class DigitalEngine:
         self.sensor_connected = False  # Estado inicial de conexión del sensor
         self.processing_instruction = False
         self.trip_ended_sent = False  # Flag para evitar duplicados
+        self.traffic_stopped = False
+        self.previous_status = None
 
         self.setup_kafka()
 
@@ -124,85 +126,128 @@ class DigitalEngine:
     def process_instruction(self, instruction):
         if instruction['type'] == 'STOP':
             logger.info("INSTRUCCION STOP")
+            self.traffic_stopped = True
+            self.status = "KO"
             self.color = "RED"
+            self.customer_asigned = "x"
+            self.destination = None
+            self.picked_off = 0
             self.send_position_update()  # Notify central about the stop
+            self.save_state()
             return  # No further actions until RESUME is received
 
         elif instruction['type'] == 'RESUME':
             logger.info("INSTRUCCION RESUME")
-            self.color = "GREEN"
-            self.send_position_update()
-            self.move_to_destination()
-
-        elif instruction['type'] == 'MOVE':
-            self.trip_ended_sent = False
-            self.pickup = instruction['pickup']
-            logger.info("INSTRUCCION MOVE")
-            self.status = "BUSY"
-            self.color = "GREEN"
-            self.customer_asigned = instruction['customer_id']
-            if isinstance(instruction['destination'], (list, tuple)):
-                self.destination = instruction['destination']
-            else:
-                logger.error(f"Invalid destination format: {instruction['destination']}")
-                return
-            self.move_to_destination()
-
-        elif instruction['type'] == 'RETURN_TO_BASE':
-            logger.info("INSTRUCCION RETURN")
-            self.pickup = 0
-            self.destination = [1, 1]
-            self.status = "BUSY"
+            self.traffic_stopped = False
+            self.status = "FREE"
             self.color = "GREEN"
             self.customer_asigned = "x"
-            logger.info("Leaving the customer and returning to base")
+            self.destination = None
+            self.picked_off = 0
             self.send_position_update()
-            self.move_to_destination()
+            self.save_state()
+            return
 
-        elif instruction['type'] == 'CHANGE':
-            logger.info("INSTRUCCION CHANGE")
-            if isinstance(instruction['destination'], (list, tuple)):
-                self.destination = instruction['destination']
+        elif not self.traffic_stopped:
+            if instruction['type'] == 'MOVE':
+                self.trip_ended_sent = False
+                self.pickup = instruction['pickup']
+                logger.info("INSTRUCCION MOVE")
+                self.status = "BUSY"
                 self.color = "GREEN"
+                self.customer_asigned = instruction['customer_id']
+                if isinstance(instruction['destination'], (list, tuple)):
+                    self.destination = instruction['destination']
+                else:
+                    logger.error(f"Instrucción {instruction['type']} ignorada - Tráfico detenido (Estado: KO)")
+                    return
+                self.move_to_destination()
+
+            elif instruction['type'] == 'RETURN_TO_BASE':
+                logger.info("INSTRUCCION RETURN")
+                self.pickup = 0
+                self.destination = [1, 1]
+                self.status = "BUSY"
+                self.color = "GREEN"
+                self.customer_asigned = "x"
+                logger.info("Leaving the customer and returning to base")
                 self.send_position_update()
                 self.move_to_destination()
-            else:
-                logger.error(f"Invalid destination format: {instruction['destination']}")
 
+            elif instruction['type'] == 'CHANGE':
+                logger.info("INSTRUCCION CHANGE")
+                if isinstance(instruction['destination'], (list, tuple)):
+                    self.destination = instruction['destination']
+                    self.color = "GREEN"
+                    self.send_position_update()
+                    self.move_to_destination()
+                else:
+                    logger.error(f"Invalid destination format: {instruction['destination']}")
 
+    def save_state(self):
+        """Guarda el estado actual del taxi en el archivo."""
+        try:
+            with open('taxis.txt', 'r') as file:
+                lines = file.readlines()
+            
+            # Encontrar y actualizar la línea correspondiente a este taxi
+            for i, line in enumerate(lines):
+                taxi_data = line.strip().split('#')
+                if int(taxi_data[0]) == self.taxi_id:
+                    lines[i] = f"{self.taxi_id}#{self.status}#{self.color}#{self.position[0]}#{self.position[1]}#{self.customer_asigned}#{self.picked_off}#{1}\n"
+                    break
+            
+            with open('taxis.txt', 'w') as file:
+                file.writelines(lines)
+            
+            logger.info(f"Estado del taxi {self.taxi_id} actualizado en archivo")
+        except Exception as e:
+            logger.error(f"Error al guardar estado: {e}")
     def move_to_destination(self):
         try:
+            if self.traffic_stopped or self.status == "KO":
+                logger.info("No se puede mover: Tráfico detenido o estado KO")
+                return
+            
             if not isinstance(self.destination, (list, tuple)):
                 logger.error(f"Invalid destination: destination={self.destination}")
                 return
 
             # Mover al punto de recogida si no está allí y no ha recogido al cliente
             while self.position != self.pickup and self.picked_off == 0:
-                if not self.sensor_connected or self.color == "RED":  # Detenerse si el sensor no está conectado o está en ROJO
-                    logger.info("Taxi movement interrupted. Waiting for RESUME or sensor reconnection.")
-                    self.processing_instruction = False
-                    time.sleep(1)  # Pausa antes de volver a comprobar
-                    continue  # Continuar el bucle para reevaluar el estado
+                if self.traffic_stopped or self.status == "KO":
+                    logger.info("Movimiento interrumpido: Tráfico detenido o estado KO")
+                    time.sleep(1)
+                    continue
+
+                if not self.sensor_connected or self.color == "RED":
+                    logger.info("Esperando sensor o semáforo verde")
+                    time.sleep(1)
+                    continue
 
                 self.move_towards(self.pickup)
 
             # Marcar al cliente como recogido
-            if self.position == self.pickup:
+            if self.position == self.pickup and not self.traffic_stopped:
                 self.picked_off = 1
                 logger.info(f"Customer picked up at position {self.position}. Moving to destination.")
 
             # Mover al destino
             while self.position != self.destination and self.picked_off == 1:
-                if not self.sensor_connected or self.color == "RED":  # Detenerse si el sensor no está conectado o está en ROJO
-                    logger.info("Taxi movement interrupted. Waiting for RESUME or sensor reconnection.")
-                    self.processing_instruction = False
-                    time.sleep(1)  # Pausa antes de volver a comprobar
-                    continue  # Continuar el bucle para reevaluar el estado
+                if self.traffic_stopped or self.status == "KO":
+                    logger.info("Movimiento interrumpido: Tráfico detenido o estado KO")
+                    time.sleep(1)
+                    continue
+
+                if not self.sensor_connected or self.color == "RED":
+                    logger.info("Esperando sensor o semáforo verde")
+                    time.sleep(1)
+                    continue
 
                 self.move_towards(self.destination)
 
             # Finalizar el viaje si llega al destino
-            if self.position == self.destination:
+            if self.position == self.destination and not self.traffic_stopped:
                 self.finalize_trip()
 
         except Exception as e:
@@ -252,6 +297,10 @@ class DigitalEngine:
 
             
     def move_towards(self, target):
+        if self.traffic_stopped or self.status == "KO":
+            logger.info("No se puede mover: Tráfico detenido o estado KO")
+            return
+    
         if self.position[0] < target[0]:
             self.position[0] += 1
         elif self.position[0] > target[0]:
@@ -283,6 +332,7 @@ class DigitalEngine:
             logger.info("Sending update through 'taxi_updates'")
             try:
                 self.producer.send('taxi_updates', update)
+                self.save_state()
             except KafkaError as e:
                 logger.error(f"Error sending update: {e}")
         else:
