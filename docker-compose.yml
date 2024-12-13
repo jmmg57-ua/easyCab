@@ -1,8 +1,8 @@
-x-common-extra-hosts:  # Definimos la configuración común
-  extra_hosts:
-    - "registry:127.0.0.1"
-    - "central:127.0.0.1"
-    - "kafka:127.0.0.1"
+# x-common-extra-hosts: &x-common-extra-hosts
+#   extra_hosts:
+#     # - "registry:127.0.0.1"
+#     # - "central:127.0.0.1"
+#     # - "kafka:127.0.0.1"
 
 
 services:
@@ -85,7 +85,7 @@ services:
     tty: true
     ports:
       - "9001:9001"
-    <<: *x-common-extra-hosts
+    # <<: *x-common-extra-hosts
       # extra-hosts:
     #   - "registry:127.0.0.1" 
     #   - "central:127.0.0.1" # IP del pc que tiene el servicio registry
@@ -99,7 +99,7 @@ services:
     tty: true
     ports:
       - "9002:9002"
-    <<: *x-common-extra-hosts    
+    # <<: *x-common-extra-hosts    
       # extra-hosts:
     #   - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
     #   - "central:127.0.0.1"
@@ -113,7 +113,7 @@ services:
     tty: true
     ports:
       - "9003:9003"
-    <<: *x-common-extra-hosts
+    # <<: *x-common-extra-hosts
     # extra-hosts:
     #   - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
     #   - "central:127.0.0.1"
@@ -127,7 +127,7 @@ services:
     tty: true
     ports:
       - "9004:9004"
-    <<: *x-common-extra-hosts  
+    # <<: *x-common-extra-hosts  
       # extra-hosts:
     #   - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
     #   - "central:127.0.0.1"
@@ -141,7 +141,7 @@ services:
     tty: true
     ports:
       - "9005:9005"
-    <<: *x-common-extra-hosts
+    # <<: *x-common-extra-hosts
     # extra-hosts:
     #   - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
     #   - "central:127.0.0.1"
@@ -200,7 +200,7 @@ services:
       - kafka
     volumes:
       - ./data:/data 
-    <<: *x-common-extra-hosts
+    # <<: *x-common-extra-hosts
     # extra_hosts:
     #   - "kafka:127.0.0.1" #IP DEL PC1
     command: >
@@ -214,7 +214,7 @@ services:
       - kafka
     volumes:
       - ./data:/data
-    <<: *x-common-extra-hosts
+    # <<: *x-common-extra-hosts
     # extra_hosts:
     #   - "kafka:127.0.0.1" #IP DEL PC1 
     command: >
@@ -228,7 +228,7 @@ services:
       - kafka
     volumes:
       - ./data:/data 
-    <<: *x-common-extra-hosts
+    # <<: *x-common-extra-hosts
     # extra_hosts:
     #   - "kafka:127.0.0.1" #IP DEL PC1
     command: >
@@ -242,7 +242,7 @@ services:
       - kafka
     volumes:
       - ./data:/data 
-    <<: *x-common-extra-hosts
+    # <<: *x-common-extra-hosts
     # extra_hosts:
     #   - "kafka:127.0.0.1" #IP DEL PC1
     command: >
@@ -256,7 +256,7 @@ services:
       - kafka
     volumes:
       - ./data:/data 
-    <<: *x-common-extra-hosts
+    # <<: *x-common-extra-hosts
     # extra_hosts:
     #   - "kafka:127.0.0.1" #IP DEL PC1
     command: >

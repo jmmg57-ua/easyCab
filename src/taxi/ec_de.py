@@ -42,6 +42,7 @@ class DigitalEngine:
         self.sensor_connected = False  # Estado inicial de conexión del sensor
         self.processing_instruction = False
         self.trip_ended_sent = False  # Flag para evitar duplicados
+        self.instruction_queue = queue.Queue()  # Cola para las instrucciones
         self.ko = 0
         self.central_socket = None
         self.traffic_stopped = False
@@ -469,6 +470,7 @@ class DigitalEngine:
                 logger.warning(f"Reconnection attempt failed: {e}")
                 time.sleep(5)  # Espera antes de intentar reconectar
 
+    # incluir opcion de autenticar
     def interact_with_registry(self):
         """Menú para interactuar con el módulo Registry."""
         registry_url = f"https://registry:{self.ec_registry_port}"  # Cambia por la IP y puerto reales de Registry

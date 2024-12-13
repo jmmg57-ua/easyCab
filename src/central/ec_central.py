@@ -85,10 +85,15 @@ class TrafficMonitor:
 
     def _handle_status_change(self, status):
         """Maneja los cambios en el estado del tráfico."""
-        if status == "KO":
-            self._stop_all_taxis()
-        else:
-            self._resume_all_taxis()
+        #if status == "KO":
+            #self.all_to_base()
+            #todos los taxis a base
+            #ec_de tiempo_correcto==0
+            #ec_de crear instruccion all_to_base() bucle infinito, sale cuando tiempo_correcto==1
+            #central no asigna taxis en este estado (otro flag en central)
+            #problemas con la vuelta a la normalidad -> central envia mensaje de reanudacion y se leen mensajes a partir de ese mensaje en DE
+        #else:
+         #   self._resume_all_taxis()
 
     def _stop_all_taxis(self):
         """Detiene todos los taxis activos."""
@@ -108,7 +113,7 @@ class TrafficMonitor:
                     logger.error(f"Error al enviar orden de STOP al taxi {taxi_id}: {e}")
 
       
-
+    #cambiar para que todo vuevla a la normalidad
     def _resume_all_taxis(self):
         """Reanuda todos los taxis detenidos."""
         logger.info("Reanudando operación normal de taxis")
@@ -126,6 +131,7 @@ class TrafficMonitor:
                 except Exception as e:
                     logger.error(f"Error al enviar orden de RESUME al taxi {taxi_id}: {e}")
 
+    #taxis ha cambiado a json
     def _update_taxi_status(self, taxi_id, status, destination):
         """Actualiza el estado de un taxi en el archivo taxis.txt"""
         try:
@@ -288,7 +294,7 @@ class ECCentral:
                 taxi.auth_status = 1
                 taxi.token = token
                 self.save_taxis()
-                logger.info(f"Taxi {taxi_id} authenticated successfully. Token: {taxi.token}")
+                logger.info(f"Taxi {taxi_id} authenticated successfully. Token generated")
                 # Enviar token al taxi
                 conn.sendall(f"TOKEN {token}".encode('utf-8'))
 
@@ -412,7 +418,6 @@ class ECCentral:
             self.save_taxis()
             if taxi.customer_assigned != "x":
                 self.notify_customer(taxi)
-            #DEBERIA VALER SOLO EN EC DE:
             
 
         
@@ -672,6 +677,7 @@ class ECCentral:
             self.customer_destinations[customer_id] = destination
 
             # Mover la asignación a un hilo separado
+            # Comprobar que no se asignen 1 taxi a dos clientes a la vez (secundario)
             threading.Thread(target=self._assign_taxi_thread, args=(customer_id, customer_location, destination), daemon=True).start()
         else:
             del self.customers[request['customer_id']]
@@ -719,7 +725,7 @@ class ECCentral:
         logger.warning(f"No se pudo encontrar un taxi disponible para el cliente '{customer}' después de {max_retries} intentos.")
         return None
 
-        
+    # manejar taxis vacios, taxi no tiene clientes...
     def update_customer(self, customer_id, taxi):
         if customer_id in self.customers:
             customer = self.customers[customer_id]
@@ -729,6 +735,7 @@ class ECCentral:
             if customer.picked_off == 1:
                 customer.position = taxi.position
             self.locations[customer_id].position = customer.position
+            
             
 
     def assign_taxi_to_customer(self, taxi, customer_id, customer_location, destination):
@@ -864,8 +871,6 @@ class ECCentral:
                 logger.error(f"Error closing Kafka producer: {e}")
             except Exception as e:
                 logger.error(f"General error while closing Kafka producer: {e}")
-
-    #def cetral_input(self):
         
     def input_listener(self):
         while True:

@@ -8,7 +8,7 @@ if %errorlevel% neq 0 (
     exit /b
 )
 echo Entrando a la consola del contenedor CTC...
-docker exec -it easycab-ilias-ctc-1 /bin/bash -c "python ec_ctc.py"
+docker exec -it easycab-ctc-1 /bin/bash -c "python ec_ctc.py"
 if %errorlevel% neq 0 (
     echo Error al entrar a la consola del contenedor CTC.
     pause
