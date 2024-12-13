@@ -124,7 +124,7 @@ class Customer:
             
             self.request_service(service)
             
-            confirmation = self.wait_for_confirmation()
+            confirmation = self.wait_for_confirmation(service)
 
             if confirmation:
                 self.logger.info(f"Service to {service} asigned successfully.")
