@@ -87,41 +87,49 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_de
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
     ports:
       - "9002:9002"
     #Cambiar en command kafka por la ip y port del host de kafka
-    command: >
-      python ec_de.py central 8000 kafka:9092 sensor2 9002 2
+    # command: >
+    #   python ec_de.py central 8000 kafka:9092 sensor2 9002 2
 
   dengine3:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_de
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
     ports:
       - "9003:9003"
     #Cambiar en command kafka por la ip y port del host de kafka
-    command: >
-      python ec_de.py central 8000 kafka:9092 sensor3 9003 3
+    # command: >
+    #   python ec_de.py central 8000 kafka:9092 sensor3 9003 3
 
   dengine4:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_de
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
     ports:
       - "9004:9004"
     #Cambiar en command kafka por la ip y port del host de kafka
-    command: >
-      python ec_de.py central 8000 kafka:9092 sensor4 9004 4
+    # command: >
+    #   # python ec_de.py central 8000 kafka:9092 sensor4 9004 4
 
   dengine5:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_de
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true
     ports:
       - "9005:9005"
     #Cambiar en command kafka por la ip y port del host de kafka
-    command: >
-      python ec_de.py central 8000 kafka:9092 sensor5 9005 5
+    # command: >
+    #   python ec_de.py central 8000 kafka:9092 sensor5 9005 5
 
 
   sensor1:

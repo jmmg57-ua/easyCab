@@ -56,6 +56,7 @@ class ECCentral:
         self.customers: Dict[int, Customer] = {}
         self.customer_destinations = {}
         self.map_changed = False  
+        self.taxi_lock = threading.Lock()
         self.setup_kafka()
 
     def setup_kafka(self):
