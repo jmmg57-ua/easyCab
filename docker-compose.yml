@@ -78,10 +78,10 @@ services:
     tty: true
     ports:
       - "9001:9001"
-    #Cambiar en command kafka por la ip y port del host de kafka
-    #Cambiar en command central por la ip de central
-    #command: >
-     # python ec_de.py central 8000 kafka:9092 sensor1 9001 1
+    extra-hosts:
+      - "registry:127.0.0.1" 
+      - "central:127.0.0.1" # IP del pc que tiene el servicio registry
+
 
   dengine2:
     build:
@@ -91,9 +91,10 @@ services:
     tty: true
     ports:
       - "9002:9002"
-    #Cambiar en command kafka por la ip y port del host de kafka
-    # command: >
-    #   python ec_de.py central 8000 kafka:9092 sensor2 9002 2
+    extra-hosts:
+      - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
+      - "central:127.0.0.1"
+
 
   dengine3:
     build:
@@ -103,9 +104,10 @@ services:
     tty: true
     ports:
       - "9003:9003"
-    #Cambiar en command kafka por la ip y port del host de kafka
-    # command: >
-    #   python ec_de.py central 8000 kafka:9092 sensor3 9003 3
+    extra-hosts:
+      - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
+      - "central:127.0.0.1"
+
 
   dengine4:
     build:
@@ -115,9 +117,10 @@ services:
     tty: true
     ports:
       - "9004:9004"
-    #Cambiar en command kafka por la ip y port del host de kafka
-    # command: >
-    #   # python ec_de.py central 8000 kafka:9092 sensor4 9004 4
+    extra-hosts:
+      - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
+      - "central:127.0.0.1"
+
 
   dengine5:
     build:
@@ -127,9 +130,10 @@ services:
     tty: true
     ports:
       - "9005:9005"
-    #Cambiar en command kafka por la ip y port del host de kafka
-    # command: >
-    #   python ec_de.py central 8000 kafka:9092 sensor5 9005 5
+    extra-hosts:
+      - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
+      - "central:127.0.0.1"
+
 
 
   sensor1:
@@ -138,8 +142,7 @@ services:
       dockerfile: docker/Dockerfile.ec_s
     stdin_open: true       # Para habilitar la entrada estándar interactiva
     tty: true
-    #command: >
-     # python ec_s.py dengine1 9001
+
 
   sensor2:
     build:
@@ -147,10 +150,8 @@ services:
       dockerfile: docker/Dockerfile.ec_s
     stdin_open: true       # Para habilitar la entrada estándar interactiva
     tty: true
-    depends_on:
-      - dengine2
-    #command: >
-     # python ec_s.py dengine2 9002
+
+
 
   sensor3:
     build:
@@ -158,10 +159,7 @@ services:
       dockerfile: docker/Dockerfile.ec_s
     stdin_open: true       # Para habilitar la entrada estándar interactiva
     tty: true
-    depends_on:
-      - dengine3
-    #command: >
-     # python ec_s.py dengine3 9003
+
 
   sensor4:
     build:
@@ -169,10 +167,7 @@ services:
       dockerfile: docker/Dockerfile.ec_s
     stdin_open: true       # Para habilitar la entrada estándar interactiva
     tty: true
-    depends_on:
-      - dengine4
-    #command: >
-     # python ec_s.py dengine4 9004
+
 
   sensor5:
     build:
@@ -180,10 +175,7 @@ services:
       dockerfile: docker/Dockerfile.ec_s
     stdin_open: true       # Para habilitar la entrada estándar interactiva
     tty: true
-    depends_on:
-      - dengine5
-    #command: >
-     # python ec_s.py dengine5 9005
+
 
 
 
@@ -196,6 +188,8 @@ services:
       - kafka
     volumes:
       - ./data:/data 
+    extra_hosts:
+      - "kafka:127.0.0.1" #IP DEL PC1
     command: >
       python ec_customer.py kafka:9092 a /data/services1.txt 1,4
 
@@ -206,7 +200,9 @@ services:
     depends_on:
       - kafka
     volumes:
-      - ./data:/data 
+      - ./data:/data
+    extra_hosts:
+      - "kafka:127.0.0.1" #IP DEL PC1 
     command: >
       python ec_customer.py kafka:9092 b /data/services2.txt 2,8
 
@@ -218,6 +214,8 @@ services:
       - kafka
     volumes:
       - ./data:/data 
+    extra_hosts:
+      - "kafka:127.0.0.1" #IP DEL PC1
     command: >
       python ec_customer.py kafka:9092 c /data/services3.txt 3,12
 
@@ -229,6 +227,8 @@ services:
       - kafka
     volumes:
       - ./data:/data 
+    extra_hosts:
+      - "kafka:127.0.0.1" #IP DEL PC1
     command: >
       python ec_customer.py kafka:9092 d /data/services4.txt 4,16
 
@@ -240,6 +240,8 @@ services:
       - kafka
     volumes:
       - ./data:/data 
+    extra_hosts:
+      - "kafka:127.0.0.1" #IP DEL PC1
     command: >
       python ec_customer.py kafka:9092 e /data/services5.txt 5,20
 
