@@ -18,6 +18,7 @@ class Sensors:
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.status = "OK"
         self.running = True
+        
 
     def connect_to_digital_engine(self):
         try:
