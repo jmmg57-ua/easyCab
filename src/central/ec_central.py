@@ -354,7 +354,7 @@ class ECCentral:
             taxi.picked_off = picked_off
             self.map_changed = True  
             self.save_taxis()
-            if picked_off==1:
+            if customer_assigned != "x" and picked_off==1:
                 self.locations[customer_assigned].position = taxi.position 
                 self.customers[customer_assigned].picked_off = 1
                 self.customers[customer_assigned].status = "OK"
@@ -367,9 +367,12 @@ class ECCentral:
         """Notifica al cliente si el taxi ha finalizado el viaje."""
         if taxi.status == "END":
             self.map_changed = True
-            self.customers[taxi.customer_assigned].status = "SERVICED"
+            if taxi.customer_assigned != "x":
+                self.customers[taxi.customer_assigned].status = "SERVICED"
             self.save_taxis()
-            self.notify_customer(taxi)
+            if taxi.customer_assigned != "x":
+                self.notify_customer(taxi)
+            #DEBERIA VALER SOLO EN EC DE:
             time.sleep(3)
             taxi.customer_assigned = "x"  # Reset to no assigned customer
             taxi.picked_off = 0
@@ -630,6 +633,12 @@ class ECCentral:
         destination = destination
         self.customer_destinations[customer_id] = destination
 
+        # Mover la asignación a un hilo separado
+        threading.Thread(target=self._assign_taxi_thread, args=(customer_id, customer_location, destination), daemon=True).start()
+
+    def _assign_taxi_thread(self, customer_id, customer_location, destination):
+        self.customer_destinations[customer_id] = destination
+
         if customer_location:
             location_key = tuple(customer_location)
             self.locations[customer_id] = Location(customer_id, location_key, 'YELLOW')
@@ -639,32 +648,36 @@ class ECCentral:
             logger.error(f"Invalid destination: {destination}")
             return False
 
-        self.register_customer(customer_id, customer_location, destination) 
+        self.register_customer(customer_id, customer_location, destination)
 
         available_taxi = self.select_available_taxi(customer_id)
         if available_taxi and available_taxi.status == "FREE":
             self.assign_taxi_to_customer(available_taxi, customer_id, location_key, destination)
-            self.map_changed = True  
-            return True
+            self.map_changed = True
         else:
-            logger.warning("No available taxis")
-            return False
+            logger.warning(f"No available taxis for customer '{customer_id}'.")
+            self.notify_customer_assignment(customer_id, 0)
 
 
-    def select_available_taxi(self,customer):
+    def select_available_taxi(self, customer):
         """Selecciona el primer taxi disponible con estado 'FREE'."""
-        while True:
+        max_retries = 3
+        retry_count = 0
+
+        while retry_count < max_retries:
             self.load_taxis()
+            available_taxi = next((taxi for taxi in self.taxis.values() if taxi.status == 'FREE' and taxi.customer_assigned == "x" and taxi.auth_status == 1), None)
 
-            available_taxi = next((taxi for taxi in self.taxis.values() if taxi.status == 'FREE' and taxi.customer_assigned == "x" and taxi.auth_status==1), None)
-
-            # Log adicional para saber si se encontró un taxi disponible
             if available_taxi:
                 logger.info(f"Taxi disponible encontrado: {available_taxi.id}")
                 return available_taxi
             else:
-                print(f"Ningun taxi encontrado para el cliente'{customer}', probando de nuevo en 3 segundos")
+                logger.info(f"No se encontró taxi para el cliente '{customer}', reintentando en 3 segundos...")
                 time.sleep(3)
+                retry_count += 1
+
+        logger.warning(f"No se pudo encontrar un taxi disponible para el cliente '{customer}' después de {max_retries} intentos.")
+        return None
 
         
     def update_customer(self, customer_id, taxi):
@@ -702,17 +715,25 @@ class ECCentral:
 
     def notify_customer_assignment(self, customer_id, taxi):
         """Envía una respuesta al cliente confirmando la asignación del taxi."""
-        response = {
+        if taxi == 0:
+            response = {
             'customer_id': customer_id,
-            'status': "OK",
-            'assigned_taxi': taxi.id
-        }
-        try:
-            self.producer.send('taxi_responses', response)
-            self.producer.flush()
-            logger.info(f"Confirmation sent to customer {customer_id}: {response}")
-        except KafkaError as e:
-            logger.error(f"Failed to send confirmation to customer {customer_id}: {e}")
+            'status': "KO",
+            'assigned_taxi': 'x'
+            }
+
+        else:
+            response = {
+                'customer_id': customer_id,
+                'status': "OK",
+                'assigned_taxi': taxi.id
+            }
+            try:
+                self.producer.send('taxi_responses', response)
+                self.producer.flush()
+                logger.info(f"Confirmation sent to customer {customer_id}: {response}")
+            except KafkaError as e:
+                logger.error(f"Failed to send confirmation to customer {customer_id}: {e}")
 
     def process_update(self, data):
         if data['status'] == "ERROR":
@@ -763,7 +784,6 @@ class ECCentral:
                 self.draw_map()
                 self.broadcast_map()
                 self.map_changed = False  
-            time.sleep(0.1)  
 
 
     def start_server_socket(self):

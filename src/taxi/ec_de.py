@@ -122,6 +122,18 @@ class DigitalEngine:
             logger.error(f"General error in kafka_listener: {e}")
             time.sleep(5)
 
+    def comprobador_cola(self):
+        while True:
+            try:
+                # Obtener la próxima instrucción de la cola
+                instruction = self.instruction_queue.get()
+                logger.info(f"Processing instruction: {instruction}")
+                self.process_instruction(instruction)
+            except queue.Empty:
+                # Si no hay instrucciones, continuar
+                continue
+            except Exception as e:
+                logger.error(f"Error while processing instruction: {e}")
 
     def process_instruction(self, instruction):
         if instruction['type'] == 'STOP':
@@ -138,8 +150,29 @@ class DigitalEngine:
 
         elif instruction['type'] == 'RESUME':
             logger.info("INSTRUCCION RESUME")
-            self.traffic_stopped = False
-            self.status = "FREE"
+            self.color = "GREEN"
+            self.send_position_update()
+            self.move_to_destination()
+
+        elif instruction['type'] == 'MOVE':
+            self.trip_ended_sent = False
+            self.pickup = instruction['pickup']
+            logger.info("INSTRUCCION MOVE")
+            self.status = "BUSY"
+            self.color = "GREEN"
+            self.customer_asigned = instruction['customer_id']
+            if isinstance(instruction['destination'], (list, tuple)):
+                self.destination = instruction['destination']
+            else:
+                logger.error(f"Invalid destination format: {instruction['destination']}")
+                return
+            self.move_to_destination()
+
+        elif instruction['type'] == 'RETURN_TO_BASE':
+            logger.info("INSTRUCCION RETURN")
+            self.picked_off = 1
+            self.destination = [1, 1]
+            self.status = "BUSY"
             self.color = "GREEN"
             self.customer_asigned = "x"
             self.destination = None
@@ -174,15 +207,14 @@ class DigitalEngine:
                 self.send_position_update()
                 self.move_to_destination()
 
-            elif instruction['type'] == 'CHANGE':
-                logger.info("INSTRUCCION CHANGE")
-                if isinstance(instruction['destination'], (list, tuple)):
-                    self.destination = instruction['destination']
-                    self.color = "GREEN"
-                    self.send_position_update()
-                    self.move_to_destination()
-                else:
-                    logger.error(f"Invalid destination format: {instruction['destination']}")
+    def check_for_interrupt(self):
+        if not self.instruction_queue.empty():
+            instruction = self.instruction_queue.get()  # Extraer nueva instrucción
+            logger.info(f"Interrupting current operation for new instruction: {instruction}")
+            self.process_instruction(instruction)
+            return True
+        return False
+
 
     def save_state(self):
         """Guarda el estado actual del taxi en el archivo."""
@@ -213,18 +245,10 @@ class DigitalEngine:
                 logger.error(f"Invalid destination: destination={self.destination}")
                 return
 
-            # Mover al punto de recogida si no está allí y no ha recogido al cliente
+            # Mover al punto de recogida
             while self.position != self.pickup and self.picked_off == 0:
-                if self.traffic_stopped or self.status == "KO":
-                    logger.info("Movimiento interrumpido: Tráfico detenido o estado KO")
-                    time.sleep(1)
-                    continue
-
-                if not self.sensor_connected or self.color == "RED":
-                    logger.info("Esperando sensor o semáforo verde")
-                    time.sleep(1)
-                    continue
-
+                if self.check_for_interrupt():
+                    break  # Interrumpir el movimiento si hay una nueva instrucción
                 self.move_towards(self.pickup)
 
             # Marcar al cliente como recogido
@@ -234,16 +258,8 @@ class DigitalEngine:
 
             # Mover al destino
             while self.position != self.destination and self.picked_off == 1:
-                if self.traffic_stopped or self.status == "KO":
-                    logger.info("Movimiento interrumpido: Tráfico detenido o estado KO")
-                    time.sleep(1)
-                    continue
-
-                if not self.sensor_connected or self.color == "RED":
-                    logger.info("Esperando sensor o semáforo verde")
-                    time.sleep(1)
-                    continue
-
+                if self.check_for_interrupt():
+                    break  # Interrumpir el movimiento si hay una nueva instrucción
                 self.move_towards(self.destination)
 
             # Finalizar el viaje si llega al destino
@@ -252,6 +268,7 @@ class DigitalEngine:
 
         except Exception as e:
             logger.error(f"Error in move_to_destination: {e}")
+
 
     def finalize_trip(self):
         """Handle trip completion and reset taxi state."""
@@ -316,10 +333,11 @@ class DigitalEngine:
         
         self.send_position_update()
         # self.draw_map()
-        time.sleep(1.5)  
+        time.sleep(1)  
 
     def send_position_update(self):
         # Verificar si el socket está abierto antes de enviar
+        logger.debug(f"Sending update: Position {self.position}, Status {self.status}, Color {self.color}")
         if self.sensor_socket and self.sensor_socket.fileno() != -1:
             update = {
                 'taxi_id': self.taxi_id,
@@ -574,11 +592,10 @@ class DigitalEngine:
 
         logger.info("Digital Engine is running...")
         
-        for partition in self.consumer.assignment():
-            self.consumer.seek_to_end(partition)
-        
         threading.Thread(target=self.kafka_listener, daemon=True).start()
         threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
+        threading.Thread(target=self.comprobador_cola, daemon=True).start()
+
         # threading.Thread(target=self.listen_to_central, args=(conn,), daemon=True).start()
 
         while True:

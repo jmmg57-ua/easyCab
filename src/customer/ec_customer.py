@@ -96,7 +96,7 @@ class Customer:
         for message in self.consumer:
             response = message.value
             if response.get('customer_id') == self.customer_id:
-                print(f"HE RECIBIDO MENSAJE: {response}")
+                self.logger.info(f"HE RECIBIDO MENSAJE: {response}")
                 status = response.get('status')
                 if status == "END":
                     self.logger.info(f"Service completed: {response}")
@@ -110,6 +110,9 @@ class Customer:
                     self.logger.info("Taxi stopped by central order.")
                 elif status == "RESUME":
                     self.logger.info("Taxi resumed journey.")
+                elif status == "RETURN":
+                    self.logger.info("Taxi left me and went back to base.")
+                    return False
                 
         self.logger.warning("Listener stopped unexpectedly.")
         return False
