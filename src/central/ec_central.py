@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Dict, Tuple
 import threading
 import ssl
+import requests
+from requests.exceptions import RequestException
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,6 +44,110 @@ class Location:
     position: Tuple[int, int]
     color: str 
 
+class TrafficMonitor:
+    def __init__(self, central):
+        self.central = central
+        self.ctc_url = "http://ctc:5000/api/traffic-status"
+        self.running = True
+        self.current_status = "OK"
+        
+    def start(self):
+        """Inicia el monitoreo del tráfico en un hilo separado."""
+        self.monitor_thread = threading.Thread(target=self._monitor_traffic, daemon=True)
+        self.monitor_thread.start()
+        logger.info("Traffic monitor started")
+
+    def stop(self):
+        """Detiene el monitoreo del tráfico."""
+        self.running = False
+        if hasattr(self, 'monitor_thread'):
+            self.monitor_thread.join()
+        logger.info("Traffic monitor stopped")
+    
+    def _monitor_traffic(self):
+        """Monitorea el estado del tráfico cada 10 segundos."""
+        while self.running:
+            try:
+                response = requests.get(self.ctc_url)
+                if response.status_code == 200:
+                    data = response.json()
+                    new_status = data['status']
+                    
+                    if new_status != self.current_status:
+                        self.current_status = new_status
+                        self._handle_status_change(new_status)
+                        logger.info(f"Traffic status changed to: {new_status}")
+                
+            except RequestException as e:
+                logger.error(f"Error al consultar CTC: {e}")
+            
+            time.sleep(10)
+
+    def _handle_status_change(self, status):
+        """Maneja los cambios en el estado del tráfico."""
+        if status == "KO":
+            self._stop_all_taxis()
+        else:
+            self._resume_all_taxis()
+
+    def _stop_all_taxis(self):
+        """Detiene todos los taxis activos."""
+        logger.info("Deteniendo todos los taxis por condiciones climáticas")
+        for taxi_id, taxi in self.central.taxis.items():
+            if taxi.auth_status == 1:
+                instruction = {
+                    'taxi_id': taxi_id,
+                    'type': 'STOP'
+                }
+                try:
+                    self.central.producer.send('taxi_instructions', instruction)
+                    logger.info(f"Enviada orden de STOP al taxi {taxi_id}")
+                    # Actualizar estado en taxis.txt
+                    self._update_taxi_status(taxi_id, "KO", "Parado")
+                except Exception as e:
+                    logger.error(f"Error al enviar orden de STOP al taxi {taxi_id}: {e}")
+
+      
+
+    def _resume_all_taxis(self):
+        """Reanuda todos los taxis detenidos."""
+        logger.info("Reanudando operación normal de taxis")
+        for taxi_id, taxi in self.central.taxis.items():
+            if taxi.auth_status == 1:
+                instruction = {
+                    'taxi_id': taxi_id,
+                    'type': 'RESUME'
+                }
+                try:
+                    self.central.producer.send('taxi_instructions', instruction)
+                    logger.info(f"Enviada orden de RESUME al taxi {taxi_id}")
+                    # Actualizar estado en taxis.txt
+                    self._update_taxi_status(taxi_id, "FREE", "-")
+                except Exception as e:
+                    logger.error(f"Error al enviar orden de RESUME al taxi {taxi_id}: {e}")
+
+    def _update_taxi_status(self, taxi_id, status, destination):
+        """Actualiza el estado de un taxi en el archivo taxis.txt"""
+        try:
+            with open('taxis.txt', 'r') as file:
+                lines = file.readlines()
+            
+            for i, line in enumerate(lines):
+                taxi_data = line.strip().split('#')
+                if int(taxi_data[0]) == taxi_id:
+                    # Mantener la posición y otros datos, solo actualizar estado y destino
+                    taxi_data[1] = status
+                    taxi_data[2] = "RED" if status == "KO" else "GREEN"
+                    taxi_data[5] = "x"  # customer_assigned
+                    lines[i] = '#'.join(taxi_data) + '\n'
+                    break
+            
+            with open('taxis.txt', 'w') as file:
+                file.writelines(lines)
+            
+        except Exception as e:
+            logger.error(f"Error actualizando estado del taxi {taxi_id} en archivo: {e}")
+
 class ECCentral:
     def __init__(self, kafka_bootstrap_servers, listen_port):
         self.kafka_bootstrap_servers = kafka_bootstrap_servers
@@ -58,6 +164,7 @@ class ECCentral:
         self.map_changed = False  
         self.taxi_lock = threading.Lock()
         self.setup_kafka()
+        self.traffic_monitor = TrafficMonitor(self)
 
     def setup_kafka(self):
         retry_count = 0
@@ -101,6 +208,7 @@ class ECCentral:
             logger.info("Map configuration loaded successfully.")
         except Exception as e:
             logger.error(f"Error loading map configuration: {e}")
+
 
     def load_taxis(self):
         """Carga los taxis desde el archivo JSON, soportando formato lista o diccionario."""
@@ -808,6 +916,8 @@ class ECCentral:
         self.load_map_config()
         self.load_taxis()
         logger.info("EC_Central is running...")
+
+        self.traffic_monitor.start()
 
         # Mostrar el mapa inicial
         self.draw_map()

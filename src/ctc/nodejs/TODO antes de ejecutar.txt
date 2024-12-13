@@ -1,0 +1,1 @@
+poner en un terminal en esta ubicación: npm install

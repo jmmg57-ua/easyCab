@@ -262,3 +262,12 @@ services:
     command: >
       python ec_customer.py kafka:9092 e /data/services5.txt 5,20
 
+  ctc:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ec_ctc
+    ports:
+      - "5000:5000"
+    stdin_open: true # Para habilitar la entrada estándar interactiva
+    tty: true # Para habilitar TTY interactivo
+    

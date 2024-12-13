@@ -37,7 +37,6 @@ class DigitalEngine:
         self.customer_asigned = "x"
         self.locations = {}
         self.taxis = {}
-        self.instruction_queue = queue.Queue()  # Cola para las instrucciones
         self.picked_off = 0
         self.central_disconnected = False
         self.sensor_connected = False  # Estado inicial de conexión del sensor
@@ -45,6 +44,9 @@ class DigitalEngine:
         self.trip_ended_sent = False  # Flag para evitar duplicados
         self.ko = 0
         self.central_socket = None
+        self.traffic_stopped = False
+        self.previous_status = None
+
         self.setup_kafka()
 
     def setup_kafka(self):
@@ -133,7 +135,7 @@ class DigitalEngine:
                         continue
                     if data['taxi_id'] == self.taxi_id:
                         logger.info(f"Received message on topic 'taxi_instructions'")
-                        self.instruction_queue.put(data)
+                        self.process_instruction(data)
                 elif message.topic == 'map_updates':
                     logger.info("Received message on topic 'map_updates'")
                     self.handle_map_updates(message.value)
@@ -163,8 +165,14 @@ class DigitalEngine:
     def process_instruction(self, instruction):
         if instruction['type'] == 'STOP':
             logger.info("INSTRUCCION STOP")
+            self.traffic_stopped = True
+            self.status = "KO"
             self.color = "RED"
+            self.customer_asigned = "x"
+            self.destination = None
+            self.picked_off = 0
             self.send_position_update()  # Notify central about the stop
+            self.save_state()
             return  # No further actions until RESUME is received
 
         elif instruction['type'] == 'RESUME':
@@ -194,7 +202,8 @@ class DigitalEngine:
             self.status = "BUSY"
             self.color = "GREEN"
             self.customer_asigned = "x"
-            logger.info("Leaving the customer and returning to base")
+            self.destination = None
+            self.picked_off = 0
             self.send_position_update()
             self.move_to_destination()
             # Verificar si el taxi llegó a la base
@@ -203,15 +212,31 @@ class DigitalEngine:
                 self.disconnect()
             
 
-        elif instruction['type'] == 'CHANGE':
-            logger.info("INSTRUCCION CHANGE")
-            if isinstance(instruction['destination'], (list, tuple)):
-                self.destination = instruction['destination']
+        elif not self.traffic_stopped:
+            if instruction['type'] == 'MOVE':
+                self.trip_ended_sent = False
+                self.pickup = instruction['pickup']
+                logger.info("INSTRUCCION MOVE")
+                self.status = "BUSY"
                 self.color = "GREEN"
+                self.customer_asigned = instruction['customer_id']
+                if isinstance(instruction['destination'], (list, tuple)):
+                    self.destination = instruction['destination']
+                else:
+                    logger.error(f"Instrucción {instruction['type']} ignorada - Tráfico detenido (Estado: KO)")
+                    return
+                self.move_to_destination()
+
+            elif instruction['type'] == 'RETURN_TO_BASE':
+                logger.info("INSTRUCCION RETURN")
+                self.pickup = 0
+                self.destination = [1, 1]
+                self.status = "BUSY"
+                self.color = "GREEN"
+                self.customer_asigned = "x"
+                logger.info("Leaving the customer and returning to base")
                 self.send_position_update()
                 self.move_to_destination()
-            else:
-                logger.error(f"Invalid destination format: {instruction['destination']}")
 
     def check_for_interrupt(self):
         if not self.instruction_queue.empty():
@@ -222,8 +247,31 @@ class DigitalEngine:
         return False
 
 
+    def save_state(self):
+        """Guarda el estado actual del taxi en el archivo."""
+        try:
+            with open('taxis.txt', 'r') as file:
+                lines = file.readlines()
+            
+            # Encontrar y actualizar la línea correspondiente a este taxi
+            for i, line in enumerate(lines):
+                taxi_data = line.strip().split('#')
+                if int(taxi_data[0]) == self.taxi_id:
+                    lines[i] = f"{self.taxi_id}#{self.status}#{self.color}#{self.position[0]}#{self.position[1]}#{self.customer_asigned}#{self.picked_off}#{1}\n"
+                    break
+            
+            with open('taxis.txt', 'w') as file:
+                file.writelines(lines)
+            
+            logger.info(f"Estado del taxi {self.taxi_id} actualizado en archivo")
+        except Exception as e:
+            logger.error(f"Error al guardar estado: {e}")
     def move_to_destination(self):
         try:
+            if self.traffic_stopped or self.status == "KO":
+                logger.info("No se puede mover: Tráfico detenido o estado KO")
+                return
+            
             if not isinstance(self.destination, (list, tuple)):
                 logger.error(f"Invalid destination: destination={self.destination}")
                 return
@@ -235,7 +283,7 @@ class DigitalEngine:
                 self.move_towards(self.pickup)
 
             # Marcar al cliente como recogido
-            if self.position == self.pickup:
+            if self.position == self.pickup and not self.traffic_stopped:
                 self.picked_off = 1
                 logger.info(f"Customer picked up at position {self.position}. Moving to destination.")
 
@@ -246,7 +294,7 @@ class DigitalEngine:
                 self.move_towards(self.destination)
 
             # Finalizar el viaje si llega al destino
-            if self.position == self.destination:
+            if self.position == self.destination and not self.traffic_stopped:
                 self.finalize_trip()
 
         except Exception as e:
@@ -298,19 +346,22 @@ class DigitalEngine:
 
             
     def move_towards(self, target):
-        if self.ko == 0:
-            if self.position[0] < target[0]:
-                self.position[0] += 1
-            elif self.position[0] > target[0]:
-                self.position[0] -= 1
-            
-            if self.position[1] < target[1]:
-                self.position[1] += 1
-            elif self.position[1] > target[1]:
-                self.position[1] -= 1
+        if self.traffic_stopped or self.status == "KO":
+            logger.info("No se puede mover: Tráfico detenido o estado KO")
+            return
+    
+        if self.position[0] < target[0]:
+            self.position[0] += 1
+        elif self.position[0] > target[0]:
+            self.position[0] -= 1
+        
+        if self.position[1] < target[1]:
+            self.position[1] += 1
+        elif self.position[1] > target[1]:
+            self.position[1] -= 1
 
-            self.position[0] = self.position[0] % 21
-            self.position[1] = self.position[1] % 21  
+        self.position[0] = self.position[0] % 21
+        self.position[1] = self.position[1] % 21  
         
         self.send_position_update()
         # self.draw_map()
@@ -320,12 +371,9 @@ class DigitalEngine:
         # Verificar si el socket está abierto antes de enviar
         logger.debug(f"Sending update: Position {self.position}, Status {self.status}, Color {self.color}")
         if self.sensor_socket and self.sensor_socket.fileno() != -1:
-            tempstatus = self.status
-            if self.ko == 1:
-                tempstatus = "KO"
             update = {
                 'taxi_id': self.taxi_id,
-                'status': tempstatus,
+                'status': self.status,
                 'color': self.color,
                 'position': self.position,
                 'customer_id': self.customer_asigned,
@@ -335,6 +383,7 @@ class DigitalEngine:
             logger.info("Sending update through 'taxi_updates'")
             try:
                 self.producer.send('taxi_updates', update)
+                self.save_state()
             except KafkaError as e:
                 logger.error(f"Error sending update: {e}")
         else:
@@ -392,18 +441,14 @@ class DigitalEngine:
                     self.handle_sensor_disconnection()
                     break
 
-                if data == "KO" and self.ko == 0:
-                    self.ko = 1
+                if data == "KO":
                     self.color = "RED"
-                    self.status = "KO"
                     self.processing_instruction = True
                     logger.info("Taxi set to STOP. Awaiting RESUME command.")
                     self.send_position_update()
 
-                elif data == "OK" and self.ko == 1:
-                    self.ko = 0
+                elif data == "OK":
                     self.color = "GREEN"
-                    self.status = "OK"
                     if not self.processing_instruction:
                         logger.info("Taxi set to RESUME.")
                         self.processing_instruction = True
@@ -542,5 +587,6 @@ if __name__ == "__main__":
     
     digital_engine = DigitalEngine(ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id, ec_registry_port)
     digital_engine.run()
+
 
 

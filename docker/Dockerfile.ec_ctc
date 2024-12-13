@@ -1,0 +1,53 @@
+FROM python:3.9-slim
+
+# Instalar dependencias necesarias y Node.js 16.x
+RUN apt-get update && apt-get install -y curl gnupg && \
+    # Añadir la llave GPG de NodeSource
+    curl -fsSL https://deb.nodesource.com/setup_16.x | bash - && \
+    # Instalar Node.js (incluye npm)
+    apt-get install -y nodejs && \
+    # Limpiar caches de apt para reducir el tamaño de la imagen
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Verificar la instalación de Node.js y npm
+RUN node -v
+RUN npm -v
+
+# Establecer el directorio de trabajo principal
+WORKDIR /app
+
+# Instalar la dependencia requests de Python
+RUN pip install --no-cache-dir requests
+
+# Crear directorio para la aplicación Node.js
+RUN mkdir nodejs
+
+# Copiar package.json y package-lock.json al directorio nodejs
+COPY src/ctc/nodejs/package.json src/ctc/nodejs/package-lock.json ./nodejs/
+
+# Cambiar al directorio nodejs
+WORKDIR /app/nodejs
+
+# Instalar dependencias de Node.js
+RUN npm install --only=production
+
+# Copiar el archivo server.js al directorio nodejs
+COPY src/ctc/nodejs/server.js ./
+
+# Volver al directorio de trabajo principal
+WORKDIR /app
+
+# Copiar el script Python interactivo
+COPY src/ctc/ec_ctc.py ./
+
+# Crear el script de inicio para ejecutar ambos procesos
+RUN echo '#!/bin/bash' > /start_ctc.sh && \
+    echo 'cd /app/nodejs && node server.js &' >> /start_ctc.sh && \
+    echo 'cd /app && python ec_ctc.py' >> /start_ctc.sh && \
+    chmod +x /start_ctc.sh
+
+# Exponer el puerto del servidor Node.js
+EXPOSE 5000
+
+# Definir el comando de inicio
+CMD ["/start_ctc.sh"]
