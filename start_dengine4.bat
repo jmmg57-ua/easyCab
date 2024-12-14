@@ -8,7 +8,7 @@ if %errorlevel% neq 0 (
     exit /b
 )
 echo Entrando a la consola del contenedor dengine...
-docker exec -it easycab-dengine4-1 /bin/bash -c "python ec_de.py central 8000 kafka:9092 sensor4 9004 4 10000"
+docker exec -it easycab-dengine4-1 /bin/bash -c "python ec_de.py central 8000 kafka:9093 sensor4 9004 4 10000"
 if %errorlevel% neq 0 (
     echo Error al entrar a la consola del contenedor dengine.
     pause

@@ -19,7 +19,7 @@ services:
   kafka:
     image: wurstmeister/kafka
     ports:
-      # - "9092:9092"       # Puerto para acceso interno dentro de la red Docker
+      - "9092:9092"       # Puerto para acceso interno dentro de la red Docker
       - "9093:9093"
       - "29092:29092"     # Puerto para acceso externo desde la máquina host
     environment:
@@ -71,9 +71,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      #Cambiar en command kafka por la ip y port 92092 del pc host de kafka
-    #command: >
-     # python ec_central.py kafka:9092 8000
+
 
   registry:
     build:
@@ -101,9 +99,6 @@ services:
     ports:
       - "9001:9001"
     # <<: *x-common-extra-hosts
-      # extra-hosts:
-    #   - "registry:127.0.0.1" 
-    #   - "central:127.0.0.1" # IP del pc que tiene el servicio registry
 
 
   dengine2:
@@ -115,9 +110,6 @@ services:
     ports:
       - "9002:9002"
     # <<: *x-common-extra-hosts    
-      # extra-hosts:
-    #   - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
-    #   - "central:127.0.0.1"
 
 
   dengine3:
@@ -129,9 +121,6 @@ services:
     ports:
       - "9003:9003"
     # <<: *x-common-extra-hosts
-    # extra-hosts:
-    #   - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
-    #   - "central:127.0.0.1"
 
 
   dengine4:
@@ -143,10 +132,6 @@ services:
     ports:
       - "9004:9004"
     # <<: *x-common-extra-hosts  
-      # extra-hosts:
-    #   - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
-    #   - "central:127.0.0.1"
-
 
   dengine5:
     build:
@@ -157,9 +142,6 @@ services:
     ports:
       - "9005:9005"
     # <<: *x-common-extra-hosts
-    # extra-hosts:
-    #   - "registry:127.0.0.1"  # IP del pc que tiene el servicio registry
-    #   - "central:127.0.0.1"
 
 
 
@@ -216,8 +198,6 @@ services:
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts
-    # extra_hosts:
-    #   - "kafka:127.0.0.1" #IP DEL PC1
     command: >
       python ec_customer.py kafka:9093 a /data/services1.txt 1,4
 
@@ -230,10 +210,8 @@ services:
     volumes:
       - ./data:/data
     # <<: *x-common-extra-hosts
-    # extra_hosts:
-    #   - "kafka:127.0.0.1" #IP DEL PC1 
     command: >
-      python ec_customer.py kafka:9092 b /data/services2.txt 2,8
+      python ec_customer.py kafka:9093 b /data/services2.txt 2,8
 
   customer3:
     build:
@@ -244,10 +222,8 @@ services:
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts
-    # extra_hosts:
-    #   - "kafka:127.0.0.1" #IP DEL PC1
     command: >
-      python ec_customer.py kafka:9092 c /data/services3.txt 3,12
+      python ec_customer.py kafka:9093 c /data/services3.txt 3,12
 
   customer4:
     build:
@@ -258,10 +234,8 @@ services:
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts
-    # extra_hosts:
-    #   - "kafka:127.0.0.1" #IP DEL PC1
     command: >
-      python ec_customer.py kafka:9092 d /data/services4.txt 4,16
+      python ec_customer.py kafka:9093 d /data/services4.txt 4,16
 
   customer5:
     build:
@@ -272,10 +246,8 @@ services:
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts
-    # extra_hosts:
-    #   - "kafka:127.0.0.1" #IP DEL PC1
     command: >
-      python ec_customer.py kafka:9092 e /data/services5.txt 5,20
+      python ec_customer.py kafka:9093 e /data/services5.txt 5,20
 
   ctc:
     build:
