@@ -27,7 +27,11 @@ class Customer:
                 self.producer = KafkaProducer(
                     bootstrap_servers=[self.kafka_broker],
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-                    retries=3
+                    retries=3,
+                    security_protocol='SSL',
+                    ssl_cafile='./kafka_certs/ca.crt',
+                    ssl_certfile='./kafka_certs/kafka.crt',
+                    ssl_keyfile='./kafka_certs/kafka.key'
                 )
                 self.logger.info("Kafka producer set up successfully")
 
@@ -37,8 +41,13 @@ class Customer:
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
                     enable_auto_commit=False,
                     group_id=f'customer_{self.customer_id}', 
-                    auto_offset_reset='earliest'
+                    auto_offset_reset='earliest',
+                    security_protocol='SSL',
+                    ssl_cafile='./kafka_certs/ca.crt',
+                    ssl_certfile='./kafka_certs/kafka.crt',
+                    ssl_keyfile='./kafka_certs/kafka.key'
                 )
+
                 self.logger.info("Kafka consumer set up successfully")
                 return
             except KafkaError as e:

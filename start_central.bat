@@ -8,7 +8,7 @@ if %errorlevel% neq 0 (
     exit /b
 )
 echo Entrando a la consola del contenedor central...
-docker exec -it easycab-central-1 /bin/bash -c "python ec_central.py kafka:9092 8000"
+docker exec -it easycab-central-1 /bin/bash -c "python ec_central.py kafka:9093 8000"
 if %errorlevel% neq 0 (
     echo Error al entrar a la consola del contenedor central.
     pause

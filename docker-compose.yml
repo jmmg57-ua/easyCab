@@ -19,21 +19,36 @@ services:
   kafka:
     image: wurstmeister/kafka
     ports:
-      - "9092:9092"       # Puerto para acceso interno dentro de la red Docker
+      # - "9092:9092"       # Puerto para acceso interno dentro de la red Docker
+      - "9093:9093"
       - "29092:29092"     # Puerto para acceso externo desde la máquina host
     environment:
-      KAFKA_LISTENERS: PLAINTEXT_INTERNAL://0.0.0.0:9092,PLAINTEXT_EXTERNAL://0.0.0.0:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://192.168.1.131:29092 #Cambiar external por IP que hostee kafka
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_LISTENERS: SSL://0.0.0.0:9093,PLAINTEXT_INTERNAL://0.0.0.0:9092,PLAINTEXT_EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: SSL://kafka:9093,PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://192.168.1.131:29092 #Cambiar external por IP que hostee kafka
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SSL:SSL,PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: SSL
+      # Configuración SSL para cifrado
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/kafka.keystore.jks
+      KAFKA_SSL_KEYSTORE_PASSWORD: password
+      KAFKA_SSL_KEY_PASSWORD: password
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/kafka.truststore.jks      
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: password
+      KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
+      KAFKA_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_CREATE_TOPICS: "taxi_updates:1:1,taxi_requests:1:1,taxi_responses:1:1,updated_map:1:1,taxi_instructions:1:1,map_updates:1:1"
+    
+    volumes:
+      - ./kafka_certs:/etc/kafka/secrets
+    
     depends_on:
       zookeeper:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka:9092"]
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka:9093"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -204,7 +219,7 @@ services:
     # extra_hosts:
     #   - "kafka:127.0.0.1" #IP DEL PC1
     command: >
-      python ec_customer.py kafka:9092 a /data/services1.txt 1,4
+      python ec_customer.py kafka:9093 a /data/services1.txt 1,4
 
   customer2:
     build:

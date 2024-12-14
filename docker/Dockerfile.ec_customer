@@ -10,6 +10,7 @@ COPY ./src/customer /app
 # Instalar dependencias
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY ./kafka_certs ./kafka_certs
 
 # Comando para ejecutar el cliente
 CMD ["python", "ec_customer.py"]

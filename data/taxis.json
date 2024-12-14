@@ -1,15 +1,1 @@
-{
-    "1": {
-        "id": 1,
-        "status": "BUSY",
-        "color": "GREEN",
-        "position": [
-            20,
-            1
-        ],
-        "customer_assigned": "x",
-        "picked_off": 0,
-        "authenticated": 1,
-        "token": "0fbf7fb8-6fb8-473b-83c1-b8dbab1b2c50"
-    }
-}
+{}

@@ -180,7 +180,11 @@ class ECCentral:
                 self.producer = KafkaProducer(
                     bootstrap_servers=[self.kafka_bootstrap_servers],
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-                    retries=3
+                    retries=3,
+                    security_protocol='SSL',
+                    ssl_cafile='./kafka_certs/ca.crt',
+                    ssl_certfile='./kafka_certs/kafka.crt',
+                    ssl_keyfile='./kafka_certs/kafka.key'
                 )
                 logger.info("Kafka producer set up successfully")
 
@@ -190,7 +194,11 @@ class ECCentral:
                     bootstrap_servers=[self.kafka_bootstrap_servers],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
                     group_id='central-group',
-                    auto_offset_reset='latest'
+                    auto_offset_reset='latest',
+                    security_protocol='SSL',                # Protocolo SSL
+                    ssl_cafile='./kafka_certs/ca.crt',  # Certificado de la autoridad certificadora
+                    ssl_certfile='./kafka_certs/kafka.crt',  # Certificado del cliente
+                    ssl_keyfile='./kafka_certs/kafka.key'    # Clave privada del cliente
                 )
                 logger.info("Kafka consumer set up successfully")
                 return

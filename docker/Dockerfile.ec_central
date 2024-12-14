@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar el resto de los archivos después de instalar dependencias
 COPY ./src/central ./
+COPY ./kafka_certs ./kafka_certs
 
 ENTRYPOINT ["/bin/bash"]
 

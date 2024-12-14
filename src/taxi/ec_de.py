@@ -57,7 +57,11 @@ class DigitalEngine:
                 self.producer = KafkaProducer(
                     bootstrap_servers=[self.kafka_broker],
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-                    retries=3
+                    retries=3,
+                    security_protocol='SSL',                # Protocolo SSL
+                    ssl_cafile='./kafka_certs/ca.crt',  # Certificado de la autoridad certificadora
+                    ssl_certfile='./kafka_certs/kafka.crt',  # Certificado del cliente
+                    ssl_keyfile='./kafka_certs/kafka.key'    # Clave privada del cliente
                 )
                 logger.info("Kafka producer set up successfully")
 
@@ -66,7 +70,11 @@ class DigitalEngine:
                     bootstrap_servers=[self.kafka_broker],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
                     group_id=f'customer_{self.taxi_id}',
-                    auto_offset_reset='latest'
+                    auto_offset_reset='latest',
+                    security_protocol='SSL',                # Protocolo SSL
+                    ssl_cafile='./kafka_certs/ca.crt',  # Certificado de la autoridad certificadora
+                    ssl_certfile='./kafka_certs/kafka.crt',  # Certificado del cliente
+                    ssl_keyfile='./kafka_certs/kafka.key'    # Clave privada del cliente
                 )
                 logger.info("Kafka consumer set up successfully")
                 return
@@ -248,25 +256,6 @@ class DigitalEngine:
         return False
 
 
-    def save_state(self):
-        """Guarda el estado actual del taxi en el archivo."""
-        try:
-            with open('taxis.txt', 'r') as file:
-                lines = file.readlines()
-            
-            # Encontrar y actualizar la línea correspondiente a este taxi
-            for i, line in enumerate(lines):
-                taxi_data = line.strip().split('#')
-                if int(taxi_data[0]) == self.taxi_id:
-                    lines[i] = f"{self.taxi_id}#{self.status}#{self.color}#{self.position[0]}#{self.position[1]}#{self.customer_asigned}#{self.picked_off}#{1}\n"
-                    break
-            
-            with open('taxis.txt', 'w') as file:
-                file.writelines(lines)
-            
-            logger.info(f"Estado del taxi {self.taxi_id} actualizado en archivo")
-        except Exception as e:
-            logger.error(f"Error al guardar estado: {e}")
     def move_to_destination(self):
         try:
             if self.traffic_stopped or self.status == "KO":
