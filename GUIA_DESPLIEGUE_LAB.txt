@@ -11,8 +11,5 @@ PC3:
 - Dengine (cambiar ip de central y Kafka (PC1 para los 2) en extra_hosts)
 - Sensor
 
-IMPORTANTE: si no funciona lo de dengine:
-	Para conectar dengine con Register en el PC1, deberemos de:
-	Ir a C:\Windows\System32\drivers\etc
-	editar el archivo hosts
-	agregar: "IP DE PC1"    registry
+Eliminar node modules y package-lock.json + npm install
+
