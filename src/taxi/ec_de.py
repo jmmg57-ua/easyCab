@@ -33,7 +33,7 @@ class DigitalEngine:
         self.status = "FREE"   
         self.color = "RED"     
         self.position = [1, 1]  
-        self.destination = None
+        self.destination = [1,1]
         self.customer_asigned = "x"
         self.locations = {}
         self.taxis = {}
@@ -146,7 +146,7 @@ class DigitalEngine:
                         continue
                     if data['taxi_id'] == self.taxi_id:
                         logger.info(f"Received message on topic 'taxi_instructions'")
-                        self.process_instruction(data)
+                        self.instruction_queue.put(data)
                 elif message.topic == 'map_updates':
                     logger.info("Received message on topic 'map_updates'")
                     self.handle_map_updates(message.value)
@@ -221,6 +221,15 @@ class DigitalEngine:
                 logger.info(f"Taxi {self.taxi_id} has returned to base.")
                 self.disconnect()
             
+        elif instruction['type'] == 'CHANGE':
+            logger.info("INSTRUCCION CHANGE")
+            if isinstance(instruction['destination'], (list, tuple)):
+                self.destination = instruction['destination']
+                self.color = "GREEN"
+                self.send_position_update()
+                self.move_to_destination()
+            else:
+                logger.error(f"Invalid destination format: {instruction['destination']}")
 
         elif not self.traffic_stopped:
             if instruction['type'] == 'MOVE':
@@ -431,14 +440,18 @@ class DigitalEngine:
                     self.handle_sensor_disconnection()
                     break
 
-                if data == "KO":
+                if data == "KO" and self.ko == 0:
+                    self.ko = 1
                     self.color = "RED"
+                    self.status = "KO"
                     self.processing_instruction = True
                     logger.info("Taxi set to STOP. Awaiting RESUME command.")
                     self.send_position_update()
 
-                elif data == "OK":
+                elif data == "OK" and self.ko == 1:
+                    self.ko = 0
                     self.color = "GREEN"
+                    self.status = "OK"
                     if not self.processing_instruction:
                         logger.info("Taxi set to RESUME.")
                         self.processing_instruction = True

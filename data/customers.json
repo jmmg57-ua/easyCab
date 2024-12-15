@@ -1,0 +1,24 @@
+{
+    "b": {
+        "id": "b",
+        "status": "WAIT",
+        "position": [
+            10,
+            10
+        ],
+        "destination": "E",
+        "taxi_assigned": 1,
+        "picked_off": 0
+    },
+    "d": {
+        "id": "d",
+        "status": "WAIT",
+        "position": [
+            10,
+            10
+        ],
+        "destination": "C",
+        "taxi_assigned": 2,
+        "picked_off": 0
+    }
+}

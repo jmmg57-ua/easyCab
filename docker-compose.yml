@@ -197,6 +197,7 @@ services:
       - kafka
     volumes:
       - ./data:/data 
+    restart: no
     # <<: *x-common-extra-hosts
     command: >
       python ec_customer.py kafka:9093 a /data/services1.txt 1,4
@@ -209,6 +210,7 @@ services:
       - kafka
     volumes:
       - ./data:/data
+    restart: no
     # <<: *x-common-extra-hosts
     command: >
       python ec_customer.py kafka:9093 b /data/services2.txt 2,8

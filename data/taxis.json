@@ -1,67 +1,67 @@
 {
     "1": {
         "id": 1,
-        "status": "BUSY",
-        "color": "GREEN",
+        "status": "KO",
+        "color": "RED",
         "position": [
-            12,
-            20
+            13,
+            13
         ],
-        "customer_assigned": "a",
-        "picked_off": 1,
+        "customer_assigned": "x",
+        "picked_off": 0,
         "authenticated": 1,
-        "token": "17b71f83-8f21-434d-a9e3-50426a49a568"
+        "token": "db821435-801e-46d6-97b2-14bbf0eb3cdc"
     },
     "2": {
         "id": 2,
         "status": "BUSY",
         "color": "GREEN",
         "position": [
-            16,
+            11,
             10
         ],
-        "customer_assigned": "b",
-        "picked_off": 1,
+        "customer_assigned": "x",
+        "picked_off": 0,
         "authenticated": 1,
-        "token": "410732bf-1fba-4a95-ab1f-9b5da3c27725"
+        "token": "e5596659-ed72-43ff-9925-1777e74aeb24"
     },
     "3": {
         "id": 3,
-        "status": "BUSY",
-        "color": "GREEN",
+        "status": "FREE",
+        "color": "RED",
         "position": [
-            11,
-            20
+            20,
+            1
         ],
-        "customer_assigned": "c",
-        "picked_off": 1,
+        "customer_assigned": "x",
+        "picked_off": 0,
         "authenticated": 1,
-        "token": "6c850da5-1f23-4cc3-b371-3ccc5bad9662"
+        "token": "fb392ad0-aaa5-47f3-8a71-52e62a0a5e02"
     },
     "4": {
         "id": 4,
-        "status": "BUSY",
-        "color": "GREEN",
+        "status": "FREE",
+        "color": "RED",
         "position": [
-            8,
-            12
+            10,
+            10
         ],
-        "customer_assigned": "d",
-        "picked_off": 1,
+        "customer_assigned": "x",
+        "picked_off": 0,
         "authenticated": 1,
-        "token": "d938e940-a497-4d84-a37c-1a82c1adb4a3"
+        "token": "f45df974-b073-49b7-9ddd-a3700c49aa62"
     },
     "5": {
         "id": 5,
-        "status": "BUSY",
-        "color": "GREEN",
+        "status": "FREE",
+        "color": "RED",
         "position": [
-            5,
-            15
+            10,
+            1
         ],
-        "customer_assigned": "e",
+        "customer_assigned": "x",
         "picked_off": 0,
         "authenticated": 1,
-        "token": "fb21115f-9952-4444-9c6a-c094b491ab88"
+        "token": "91cf8584-ca30-4bf4-af9c-28cac8dd296c"
     }
 }

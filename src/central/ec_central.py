@@ -13,6 +13,7 @@ import threading
 import ssl
 import requests
 from requests.exceptions import RequestException
+import queue
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,21 +21,20 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Taxi:
     id: int
-    status: str  
-    color: str  
+    status: str  #FREE, BUSY, END, ERROR
+    color: str  #GREEN, RED
     position: Tuple[int, int]
     customer_assigned: str
     picked_off: int
     auth_status: int
     token: str
-    stopped: bool = False
 
 @dataclass
 class Customer:
     id: str
-    status: str  
+    status: str  #UNATTENDED, WAITING, TRANSIT, SERVICED, 
     position: Tuple[int, int]
-    destination: Tuple[int, int]
+    destination: str
     taxi_assigned: int
     picked_off: int
 
@@ -164,13 +164,15 @@ class ECCentral:
         self.map = np.full(self.map_size, ' ', dtype=str)
         self.locations: Dict[str, Location] = {}
         self.taxis_file = '/data/taxis.json'
+        self.customers_file = '/data/customers.json'
         self.taxis: Dict[int, Taxi] = {}  
         self.customers: Dict[int, Customer] = {}
-        self.customer_destinations = {}
         self.map_changed = False  
-        self.taxi_lock = threading.Lock()
+        self.assign_taxi_lock = threading.Lock()
         self.setup_kafka()
         self.traffic_monitor = TrafficMonitor(self)
+        self.requests_q = queue.Queue()
+        self.updates_q = queue.Queue()
 
     def setup_kafka(self):
         retry_count = 0
@@ -281,6 +283,57 @@ class ECCentral:
         except Exception as e:
             logger.error(f"Error saving taxis to JSON file: {e}")
 
+    def load_customers(self):
+        """Carga los taxis desde el archivo JSON, soportando formato lista o diccionario."""
+        self.customers = {}  # Reiniciar el diccionario
+        try:
+            with open(self.customers_file, 'r') as f:
+                content = f.read().strip()
+                if not content:
+                    logger.warning("Taxis JSON file is empty. Starting with an empty dictionary.")
+                    return
+
+                customer_data = json.loads(content)
+                if isinstance(customer_data, dict):
+                    for customer_id, customer_info in customer_data.items():
+                        self.customers[int(customer_id)] = Customer(
+                            id=customer_info["id"],
+                            status=customer_info["status"],
+                            position=tuple(customer_info["position"]),
+                            destination=customer_info["destination"],
+                            taxi_assigned=customer_info["taxi_assigned"],
+                            picked_off=int(customer_info["picked_off"]),
+                        )
+                else:
+                    raise ValueError("Unexpected JSON format. Must be a list or dictionary.")
+        except FileNotFoundError:
+            logger.warning("Customers JSON file not found. Starting with an empty dictionary.")
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON: {e}. Starting with an empty dictionary.")
+        except Exception as e:
+            logger.error(f"Error loading customers from JSON file: {e}")
+
+
+
+    def save_customers(self):
+        """Guarda los customers desde el diccionario interno al archivo JSON en formato diccionario."""
+        try:
+            customer_dict = {
+                customer.id: {
+                    "id": customer.id,
+                    "status": customer.status,
+                    "position": list(customer.position),
+                    "destination": customer.destination,
+                    "taxi_assigned": int(customer.taxi_assigned),
+                    "picked_off": int(customer.picked_off)
+                }
+                for customer in self.customers.values()
+            }
+            with open(self.customers_file, 'w') as f:
+                json.dump(customer_dict, f, indent=4)
+        except Exception as e:
+            logger.error(f"Error saving customers to JSON file: {e}")
+
 
     def handle_taxi_auth(self, conn, addr):
         """Maneja la autenticación del taxi."""
@@ -358,7 +411,7 @@ class ECCentral:
                 'assigned_taxi': taxi.id,
                 'final_position': taxi.position
             }
-            self.producer.send('taxi_responses', response).get(timeout=3)  # Bloquea hasta que el mensaje se envíe
+            self.producer.send('taxi_responses', response) 
             logger.info(f"Trip completed sending to customer {taxi.customer_assigned}: {response}")
         except KafkaError as e:
             logger.error(f"Failed to notify customer {taxi.customer_assigned}: {e}")
@@ -423,11 +476,9 @@ class ECCentral:
         """Notifica al cliente si el taxi ha finalizado el viaje."""
         if taxi.status == "END":
             self.map_changed = True
-            if taxi.customer_assigned != "x":
-                self.customers[taxi.customer_assigned].status = "SERVICED"
+            self.update_customer(taxi.customer_assigned, taxi)
             self.save_taxis()
-            if taxi.customer_assigned != "x":
-                self.notify_customer(taxi)
+            self.notify_customer(taxi)
             
 
         
@@ -448,8 +499,8 @@ class ECCentral:
                 continue
             taxi_id = taxi.id
             # Obtener la destinación del cliente asignado si existe
-            if taxi.customer_assigned != "x" and taxi.customer_assigned in self.customer_destinations:
-                destination = self.customer_destinations[taxi.customer_assigned]
+            if taxi.customer_assigned != "x" and taxi.customer_assigned:
+                destination = self.customers[taxi.customer_assigned].destination
             else:
                 destination = "-"
 
@@ -658,7 +709,6 @@ class ECCentral:
         if not isinstance(customer_id, str) or not isinstance(position, (list, tuple)) or not isinstance(destination, str):
             logger.error(f"Invalid customer data: id={customer_id}, position={position}, destination={destination}")
             return False
-        
         if customer_id not in self.customers:
             self.customers[customer_id] = Customer(
                 id=customer_id,
@@ -668,7 +718,7 @@ class ECCentral:
                 taxi_assigned=0,
                 picked_off=0,
             )
-            return True
+            self.save_customers()
         else:
             customer = self.customers[customer_id]
             customer.status ="UNATTENDED"
@@ -676,25 +726,28 @@ class ECCentral:
             customer.destination=destination
             customer.taxi_assigned=0
             customer.picked_off=0
+            self.save_customers()
 
 
     def process_customer_request(self, request):
+        print(f"RECIBIDA REQUEST: {request}")
         if request['status'] == "REQUEST":
             customer_id = request['customer_id']
             destination = request['destination']
             customer_location = request['customer_location']
-            destination = destination
-            self.customer_destinations[customer_id] = destination
 
             # Mover la asignación a un hilo separado
             # Comprobar que no se asignen 1 taxi a dos clientes a la vez (secundario)
-            threading.Thread(target=self._assign_taxi_thread, args=(customer_id, customer_location, destination), daemon=True).start()
+            self.assign_taxi(customer_id, customer_location, destination)
         else:
             del self.customers[request['customer_id']]
 
-    def _assign_taxi_thread(self, customer_id, customer_location, destination):
-        self.customer_destinations[customer_id] = destination
-
+    def assign_taxi(self, customer_id, customer_location, destination):
+        #guarda la posicion del customer en locations
+        if customer_id in self.customers and self.customers[customer_id].taxi_assigned != 0:
+            logger.warning(f"Cliente {customer_id} ya tiene un taxi asignado")
+            return
+    
         if customer_location:
             location_key = tuple(customer_location)
             self.locations[customer_id] = Location(customer_id, location_key, 'YELLOW')
@@ -707,12 +760,7 @@ class ECCentral:
         self.register_customer(customer_id, customer_location, destination)
 
         available_taxi = self.select_available_taxi(customer_id)
-        if available_taxi and available_taxi.status == "FREE":
-            self.assign_taxi_to_customer(available_taxi, customer_id, location_key, destination)
-            self.map_changed = True
-        else:
-            logger.warning(f"No available taxis for customer '{customer_id}'.")
-            self.notify_customer_assignment(customer_id, 0)
+        self.assign_taxi_to_customer(available_taxi, customer_id, location_key, destination)
 
 
     def select_available_taxi(self, customer):
@@ -723,9 +771,12 @@ class ECCentral:
         while retry_count < max_retries:
             self.load_taxis()
             available_taxi = next((taxi for taxi in self.taxis.values() if taxi.status == 'FREE' and taxi.customer_assigned == "x" and taxi.auth_status == 1), None)
-
+            
             if available_taxi:
                 logger.info(f"Taxi disponible encontrado: {available_taxi.id}")
+                available_taxi.status = "BUSY"
+                available_taxi.customer_assigned = customer
+                self.save_taxis()
                 return available_taxi
             else:
                 logger.info(f"No se encontró taxi para el cliente '{customer}', reintentando en 3 segundos...")
@@ -735,31 +786,45 @@ class ECCentral:
         logger.warning(f"No se pudo encontrar un taxi disponible para el cliente '{customer}' después de {max_retries} intentos.")
         return None
 
-    # manejar taxis vacios, taxi no tiene clientes...
-    def update_customer(self, customer_id, taxi):
-        if customer_id in self.customers:
-            customer = self.customers[customer_id]
-            customer.taxi_assigned = taxi.id
-            customer.status = "WAIT"
-            customer.picked_off = taxi.picked_off
-            if customer.picked_off == 1:
-                customer.position = taxi.position
-            self.locations[customer_id].position = customer.position
-            
-            
 
     def assign_taxi_to_customer(self, taxi, customer_id, customer_location, destination):
         """Asigna el taxi al cliente y envía instrucciones."""
         self.load_taxis()  # Asegurar datos actualizados
         if taxi.id in self.taxis:
-            taxi.status = 'BUSY'
             taxi.color = 'GREEN'
-            taxi.customer_assigned = customer_id
             self.save_taxis()
         self.update_customer(customer_id, taxi)
         self.map_changed = True
         self.notify_customer_assignment(customer_id, taxi)
         self.send_taxi_instruction(taxi, customer_id, customer_location, destination)
+
+    # manejar taxis vacios, taxi no tiene clientes...
+    def update_customer(self, customer_id, taxi):
+        if customer_id in self.customers:
+            customer = self.customers[customer_id]
+            if not isinstance(customer_id, str) or not isinstance(customer.position, (list, tuple)) or not isinstance(customer.destination, str):
+                logger.error(f"Invalid customer data: id={customer_id}, position={customer.position}, destination={customer.destination} en update")
+                return False
+            if taxi.status == "END":
+                customer.status="SERVICED"
+                customer.position=taxi.position
+                customer.taxi_assigned=0
+                customer.picked_off=0
+                self.save_customers()
+            else:
+                customer.taxi_assigned = taxi.id
+                customer.picked_off = taxi.picked_off
+                if taxi.picked_off == 1:
+                    customer.status = "TRANSIT"
+                    customer.position = taxi.position
+                else:
+                    customer.status = "WAIT"
+                self.locations[customer_id].position = customer.position
+                self.save_customers()
+                
+            
+            
+
 
     def send_taxi_instruction(self, taxi, customer_id, pickup_location, destination):
         """Envía instrucciones al taxi para recoger al cliente y llevarlo al destino."""
@@ -819,17 +884,41 @@ class ECCentral:
             self.update_map(data)
 
 
+    def request_checker(self):
+        while True:
+            try:
+                # Obtener la próxima instrucción de la cola
+                request = self.requests_q.get()
+                self.process_customer_request(request)
+            except queue.Empty:
+                # Si no hay instrucciones, continuar
+                continue
+            except Exception as e:
+                logger.error(f"Error while processing instruction: {e}")
+
+    def update_checker(self):
+        while True:
+            try:
+                # Obtener la próxima instrucción de la cola
+                update = self.updates_q.get()
+                self.process_update(update)
+            except queue.Empty:
+                # Si no hay instrucciones, continuar
+                continue
+            except Exception as e:
+                logger.error(f"Error while processing instruction: {e}")
+
     def kafka_listener(self):
         while True:
             try:
                 for message in self.consumer:
                     if message.topic == 'taxi_requests':
                         data = message.value
-                        self.process_customer_request(data)
+                        self.requests_q.put(data)
                         
                     elif message.topic == 'taxi_updates':
                         data = message.value
-                        self.process_update(data)
+                        self.updates_q.put(data)
 
             except KafkaError as e:
                 logger.error(f"Kafka listener error: {e}")
@@ -948,6 +1037,9 @@ class ECCentral:
 
         kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
         kafka_thread.start()
+
+        threading.Thread(target=self.request_checker, daemon=True).start()
+        threading.Thread(target=self.update_checker, daemon=True).start()
 
         map_thread = threading.Thread(target=self.auto_broadcast_map, daemon=True)
         map_thread.start()
