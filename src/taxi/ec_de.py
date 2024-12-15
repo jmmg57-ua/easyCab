@@ -74,7 +74,9 @@ class DigitalEngine:
                     security_protocol='SSL',                # Protocolo SSL
                     ssl_cafile='./kafka_certs/ca.crt',  # Certificado de la autoridad certificadora
                     ssl_certfile='./kafka_certs/kafka.crt',  # Certificado del cliente
-                    ssl_keyfile='./kafka_certs/kafka.key'    # Clave privada del cliente
+                    ssl_keyfile='./kafka_certs/kafka.key',    # Clave privada del cliente
+                    session_timeout_ms=30000,  # Incrementa el timeout de sesión
+                    request_timeout_ms=40000  # Incrementa el timeout para solicitudes
                 )
                 logger.info("Kafka consumer set up successfully")
                 return
@@ -181,7 +183,6 @@ class DigitalEngine:
             self.destination = None
             self.picked_off = 0
             self.send_position_update()  # Notify central about the stop
-            self.save_state()
             return  # No further actions until RESUME is received
 
         elif instruction['type'] == 'RESUME':
@@ -373,7 +374,6 @@ class DigitalEngine:
             logger.info("Sending update through 'taxi_updates'")
             try:
                 self.producer.send('taxi_updates', update)
-                self.save_state()
             except KafkaError as e:
                 logger.error(f"Error sending update: {e}")
         else:

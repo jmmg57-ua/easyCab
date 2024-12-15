@@ -198,7 +198,9 @@ class ECCentral:
                     security_protocol='SSL',                # Protocolo SSL
                     ssl_cafile='./kafka_certs/ca.crt',  # Certificado de la autoridad certificadora
                     ssl_certfile='./kafka_certs/kafka.crt',  # Certificado del cliente
-                    ssl_keyfile='./kafka_certs/kafka.key'    # Clave privada del cliente
+                    ssl_keyfile='./kafka_certs/kafka.key',    # Clave privada del cliente
+                    session_timeout_ms=30000,  # Incrementa el timeout de sesión
+                    request_timeout_ms=40000  # Incrementa el timeout para solicitudes
                 )
                 logger.info("Kafka consumer set up successfully")
                 return
