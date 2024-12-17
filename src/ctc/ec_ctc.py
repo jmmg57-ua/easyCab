@@ -4,6 +4,7 @@ import time
 
 NODEJS_URL = "http://localhost:5000"
 current_city = "Alicante"
+current_api_key = "70656a4c102bee1ed903fcb7e3938267"
 
 def update_nodejs_city(city):
     try:
@@ -31,6 +32,21 @@ def get_traffic_status():
         print(f"Error al comunicarse con el servidor: {e}")
         return None
 
+def update_api_key(new_key):
+    try:
+        response = requests.post(f"{NODEJS_URL}/api/apikey/{new_key}")
+        if response.status_code == 200:
+            global current_api_key
+            current_api_key = new_key
+            print(f"API Key actualizada correctamente")
+            return True
+        else:
+            print("Error al actualizar la API Key")
+            return False
+    except Exception as e:
+        print(f"Error al comunicarse con el servidor: {e}")
+        return False
+
 def main_menu():
     global current_city
     print("\n=== EASY CAB - City Traffic Control ===")
@@ -50,6 +66,8 @@ def main_menu():
         print("\nOpciones:")
         print("1. Cambiar ciudad")
         print("2. Ver estado actual")
+        print("3. Cambiar API Key")
+        print("4. Ver API Key actual")
         print("q. Salir")
         
         option = input("\nSeleccione una opción: ")
@@ -71,6 +89,13 @@ def main_menu():
                 print(f"Temperatura: {status_data['temperature']}°C")
                 print(f"Estado del tráfico: {status_data['status']}")
         
+        elif option == "3":
+            new_key = input("Ingrese la nueva API Key: ")
+            update_api_key(new_key)
+
+        elif option == "4":
+            print(f"API Key actual: {current_api_key}")
+
         elif option.lower() == "q":
             print("Saliendo...")
             break
