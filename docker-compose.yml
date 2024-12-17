@@ -3,6 +3,7 @@
 #     # - "registry:127.0.0.1"
 #     # - "central:127.0.0.1"
 #     # - "kafka:127.0.0.1"
+#     # - "ctc:127.0.0.1" (PARA CENTRAL)
 
 
 services:

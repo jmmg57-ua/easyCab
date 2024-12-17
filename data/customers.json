@@ -1,13 +1,13 @@
 {
-    "b": {
-        "id": "b",
-        "status": "UNATTENDED",
+    "a": {
+        "id": "a",
+        "status": "WAIT",
         "position": [
             15,
-            10
+            1
         ],
-        "destination": "H",
-        "taxi_assigned": 0,
+        "destination": "G",
+        "taxi_assigned": 5,
         "picked_off": 0
     }
 }
