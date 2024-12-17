@@ -193,11 +193,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_customer
-    depends_on:
-      - kafka
     volumes:
       - ./data:/data 
-    restart: no
     # <<: *x-common-extra-hosts
     command: >
       python ec_customer.py kafka:9093 a /data/services1.txt 1,4
@@ -206,11 +203,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_customer
-    depends_on:
-      - kafka
     volumes:
       - ./data:/data
-    restart: no
     # <<: *x-common-extra-hosts
     command: >
       python ec_customer.py kafka:9093 b /data/services2.txt 2,8
@@ -219,8 +213,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_customer
-    depends_on:
-      - kafka
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts
@@ -231,8 +223,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_customer
-    depends_on:
-      - kafka
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts
@@ -243,8 +233,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_customer
-    depends_on:
-      - kafka
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts

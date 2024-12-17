@@ -1,5 +1,6 @@
 @echo off
 echo Levantando el contenedor central...
+docker-compose build central
 docker-compose stop central --timeout 0
 docker-compose up -d central
 if %errorlevel% neq 0 (
