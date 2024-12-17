@@ -1,0 +1,13 @@
+{
+    "b": {
+        "id": "b",
+        "status": "UNATTENDED",
+        "position": [
+            15,
+            10
+        ],
+        "destination": "H",
+        "taxi_assigned": 0,
+        "picked_off": 0
+    }
+}

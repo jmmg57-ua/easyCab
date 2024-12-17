@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import os
 import signal
 import socket
@@ -6,6 +7,7 @@ import threading
 import time
 import json
 import logging
+from typing import Tuple
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.errors import KafkaError  
 import numpy as np
@@ -13,7 +15,11 @@ import queue
 import requests
 import ssl
 
-
+@dataclass
+class Location:
+    id: str
+    position: Tuple[int, int]
+    color: str 
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -33,20 +39,19 @@ class DigitalEngine:
         self.status = "FREE"   
         self.color = "RED"     
         self.position = [1, 1]  
-        self.destination = None
+        self.destination = [0, 0]
         self.customer_asigned = "x"
-        self.locations = {}
-        self.taxis = {}
         self.picked_off = 0
+        self.pickup = [0, 0]
+        self.locations = {}
+        self.table_lines = []
         self.central_disconnected = False
         self.sensor_connected = False  # Estado inicial de conexión del sensor
-        self.processing_instruction = False
-        self.trip_ended_sent = False  # Flag para evitar duplicados
         self.instruction_queue = queue.Queue()  # Cola para las instrucciones
+        self.map_queue = queue.Queue()
         self.ko = 0
         self.central_socket = None
-        self.traffic_stopped = False
-        self.previous_status = None
+        self.map_changed = False
 
         self.setup_kafka()
 
@@ -146,11 +151,10 @@ class DigitalEngine:
                         continue
                     if data['taxi_id'] == self.taxi_id:
                         logger.info(f"Received message on topic 'taxi_instructions'")
-                        self.process_instruction(data)
+                        self.instruction_queue.put(data)
                 elif message.topic == 'map_updates':
                     logger.info("Received message on topic 'map_updates'")
-                    self.handle_map_updates(message.value)
-                # self.draw_map()
+                    self.map_queue.put(data)
 
         except KafkaError as e:
             logger.error(f"Lost connection to Kafka: {e}")
@@ -160,7 +164,7 @@ class DigitalEngine:
             logger.error(f"General error in kafka_listener: {e}")
             time.sleep(5)
 
-    def comprobador_cola(self):
+    def instruction_checker(self):
         while True:
             try:
                 # Obtener la próxima instrucción de la cola
@@ -173,26 +177,34 @@ class DigitalEngine:
             except Exception as e:
                 logger.error(f"Error while processing instruction: {e}")
 
+    def map_checker(self):
+        while True:
+            try:
+                # Obtener la próxima instrucción de la cola
+                update = self.map_queue.get()
+                logger.info(f"Processing map update")
+                self.process_map_updates(update)
+            except queue.Empty:
+                # Si no hay instrucciones, continuar
+                continue
+            except Exception as e:
+                logger.error(f"Error while processing update: {e}")
+
+
     def process_instruction(self, instruction):
         if instruction['type'] == 'STOP':
             logger.info("INSTRUCCION STOP")
-            self.traffic_stopped = True
             self.status = "KO"
             self.color = "RED"
-            self.customer_asigned = "x"
-            self.destination = None
-            self.picked_off = 0
-            self.send_position_update()  # Notify central about the stop
-            return  # No further actions until RESUME is received
+            return 
 
         elif instruction['type'] == 'RESUME':
             logger.info("INSTRUCCION RESUME")
             self.color = "GREEN"
-            self.send_position_update()
-            self.move_to_destination()
+            self.status = "OK"
+            return            
 
         elif instruction['type'] == 'MOVE':
-            self.trip_ended_sent = False
             self.pickup = instruction['pickup']
             logger.info("INSTRUCCION MOVE")
             self.status = "BUSY"
@@ -202,8 +214,7 @@ class DigitalEngine:
                 self.destination = instruction['destination']
             else:
                 logger.error(f"Invalid destination format: {instruction['destination']}")
-                return
-            self.move_to_destination()
+            return
 
         elif instruction['type'] == 'RETURN_TO_BASE':
             logger.info("INSTRUCCION RETURN")
@@ -212,132 +223,98 @@ class DigitalEngine:
             self.status = "BUSY"
             self.color = "GREEN"
             self.customer_asigned = "x"
-            self.destination = None
             self.picked_off = 0
             self.send_position_update()
-            self.move_to_destination()
-            # Verificar si el taxi llegó a la base
-            if self.position == [1, 1]:
-                logger.info(f"Taxi {self.taxi_id} has returned to base.")
-                self.disconnect()
-            
+            return
 
-        elif not self.traffic_stopped:
-            if instruction['type'] == 'MOVE':
-                self.trip_ended_sent = False
-                self.pickup = instruction['pickup']
-                logger.info("INSTRUCCION MOVE")
-                self.status = "BUSY"
+        elif instruction['type'] == 'CHANGE':
+            logger.info("INSTRUCCION CHANGE")
+            if isinstance(instruction['destination'], (list, tuple)):
+                self.destination = instruction['destination']
                 self.color = "GREEN"
-                self.customer_asigned = instruction['customer_id']
-                if isinstance(instruction['destination'], (list, tuple)):
-                    self.destination = instruction['destination']
-                else:
-                    logger.error(f"Instrucción {instruction['type']} ignorada - Tráfico detenido (Estado: KO)")
-                    return
-                self.move_to_destination()
-
-            elif instruction['type'] == 'RETURN_TO_BASE':
-                logger.info("INSTRUCCION RETURN")
-                self.pickup = 0
-                self.destination = [1, 1]
-                self.status = "BUSY"
-                self.color = "GREEN"
-                self.customer_asigned = "x"
-                logger.info("Leaving the customer and returning to base")
                 self.send_position_update()
-                self.move_to_destination()
+            else:
+                logger.error(f"Invalid destination format: {instruction['destination']}")
+            return
 
-    def check_for_interrupt(self):
-        if not self.instruction_queue.empty():
-            instruction = self.instruction_queue.get()  # Extraer nueva instrucción
-            logger.info(f"Interrupting current operation for new instruction: {instruction}")
-            self.process_instruction(instruction)
-            return True
-        return False
+    def movement_thread(self):
+        while True:
+            try:
 
-
-    def move_to_destination(self):
-        try:
-            if self.traffic_stopped or self.status == "KO":
-                logger.info("No se puede mover: Tráfico detenido o estado KO")
-                return
+                if self.destination == [0,0]:
+                    time.sleep(1)
+                    continue
+                
+                # Finalizar el viaje si llega al destino
+                elif self.position == self.destination:
+                    self.finalize_trip()
+                    time.sleep(4)
+                    self.send_position_update()
+                    continue
             
-            if not isinstance(self.destination, (list, tuple)):
-                logger.error(f"Invalid destination: destination={self.destination}")
-                return
+                elif self.status == "KO" or self.color == "RED":
+                    time.sleep(1)
+                    continue
+                
+                elif not isinstance(self.destination, (list, tuple)):
+                    logger.error(f"Invalid destination: destination={self.destination}")
+                    self.destination = [0, 0]
+                    time.sleep(1)
+                    continue
 
-            # Mover al punto de recogida
-            while self.position != self.pickup and self.picked_off == 0:
-                if self.check_for_interrupt():
-                    break  # Interrumpir el movimiento si hay una nueva instrucción
-                self.move_towards(self.pickup)
+                elif self.destination == [1,1]:
+                    self.move_towards(self.destination)
+                # Mover al punto de recogida
+                elif self.position != self.pickup and self.picked_off == 0:
+                    self.move_towards(self.pickup)
+                    
+                # Marcar al cliente como recogido
+                elif self.position == self.pickup:
+                    self.picked_off = 1
+                    logger.info(f"Customer picked up at position {self.position}. Moving to destination.")
+                    self.move_towards(self.destination)
 
-            # Marcar al cliente como recogido
-            if self.position == self.pickup and not self.traffic_stopped:
-                self.picked_off = 1
-                logger.info(f"Customer picked up at position {self.position}. Moving to destination.")
+                # Mover al destino
+                elif self.position != self.destination and self.picked_off == 1:
+                    self.move_towards(self.destination)
 
-            # Mover al destino
-            while self.position != self.destination and self.picked_off == 1:
-                if self.check_for_interrupt():
-                    break  # Interrumpir el movimiento si hay una nueva instrucción
-                self.move_towards(self.destination)
+                
 
-            # Finalizar el viaje si llega al destino
-            if self.position == self.destination and not self.traffic_stopped:
-                self.finalize_trip()
+                self.send_position_update()
+                time.sleep(1)
 
-        except Exception as e:
-            logger.error(f"Error in move_to_destination: {e}")
+            except Exception as e:
+                logger.error(f"Error in movement_thread: {e}")
+                time.sleep(1)  # Evita bucles rápidos en caso de error
+            
 
 
     def finalize_trip(self):
         """Handle trip completion and reset taxi state."""
         try:
-            if not self.trip_ended_sent:
-
-                self.color = "RED"  # Stop the taxi after completing the trip
-                self.status = "END"  # Mark trip as ended
-                logger.info("TRIP ENDED!!")
-                
-                # Notify central of trip completion
-                update = {
-                    "customer_id": self.customer_asigned,
-                    "status": "END",
-                    "taxi_id": self.taxi_id,
-                    "position": self.position,
-                    "color" : self.color,
-                    "picked_off" : self.picked_off,
-                    "token": self.token
-                }
-                self.producer.send('taxi_updates', value=update)
-                logger.info(f"Trip completed sending to customer {self.customer_asigned}: {update}")
-
-                time.sleep(4)
-
-                # Reset taxi state
-                self.customer_asigned = "x"  # Reset to no assigned customer
-                self.picked_off = 0
-                self.status = "FREE"
-                self.destination = None
-                self.color = "RED"  # Ready for the next trip
-
-                # Notify central of the taxi being free
-                self.send_position_update()
+            self.color = "RED"  # Stop the taxi after completing the trip
+            self.status = "END"  # Mark trip as ended
+            logger.info("TRIP ENDED!!")
+            
+            if self.position == [1,1]:
+                self.disconnect()
+            self.send_position_update()
+            logger.info(f"Trip completed sending to customer {self.customer_asigned}")
+            # Reset taxi state
+            self.status = "FREE"   
+            self.color = "RED"       
+            self.destination = [0, 0]
+            self.customer_asigned = "x"
+            self.picked_off = 0
+            self.pickup = [0, 0]
 
         except KeyError as e:
             logger.error(f"Key error when processing update: missing key {e}")
         except Exception as e:
             logger.error(f"Error finalizing trip: {e}")
-
-
-
-
-
             
     def move_towards(self, target):
-        if self.traffic_stopped or self.status == "KO":
+        if self.status == "KO":
             logger.info("No se puede mover: Tráfico detenido o estado KO")
             return
     
@@ -354,9 +331,6 @@ class DigitalEngine:
         self.position[0] = self.position[0] % 21
         self.position[1] = self.position[1] % 21  
         
-        self.send_position_update()
-        # self.draw_map()
-        time.sleep(1)  
 
     def send_position_update(self):
         # Verificar si el socket está abierto antes de enviar
@@ -379,16 +353,79 @@ class DigitalEngine:
         else:
             logger.warning("Socket is closed, cannot send update.")
 
-    def handle_map_updates(self, message):
+    def process_map_updates(self, message):
         """
-        Procesa las actualizaciones de mapa recibidas a través de Kafka y
-        almacena las ubicaciones y taxis en los atributos de la clase.
+        Almacena la información del mapa y la tabla en el formato usado en Central.
         """
-        # Almacenar la última actualización del mapa y procesar ubicaciones y taxis
-        self.locations = {loc_id: location for loc_id, location in message['locations'].items()}
-        self.taxis = {taxi_id: taxi_info for taxi_id, taxi_info in message['taxis'].items()}
+        # Inicializar diccionario de ubicaciones y lista de líneas de la tabla
+        try:
+            self.locations = {}
+            self.table_lines = []
 
-        logger.info("Map updated in Digital Engine")
+            # Validar que 'locations' existe y es un diccionario
+            map_data = message.get('map', {})
+
+            # Procesa cada ubicación y almacénala como una instancia de Location
+            self.locations = {
+                str(key): Location(id=str(key), position=value['position'], color=value['color'])
+                for key, value in map_data.items()
+            }
+
+            # Procesar líneas de la tabla
+            table_data = message.get('table', [])
+            self.table_lines = table_data
+
+            # Marcar que el mapa ha cambiado
+            self.map_changed = True
+            logger.info("Mapa y tabla procesados correctamente.")
+        except Exception as e:
+            logger.error(f"Error procesando la actualización del mapa: {e}")
+
+    def map_thread(self):
+        while True:
+            if self.map_changed == True:
+                self.draw_map()
+                self.map_changed=False
+                time.sleep(1)
+
+    def draw_map(self):
+
+        # Construir las líneas del mapa
+        map_lines = []
+        border_row = "#" * (self.map_size[1] * 2 + 2)
+        map_lines.append(border_row)
+
+        bordered_map = np.full((self.map_size[0], self.map_size[1]), ' ', dtype=str)
+
+        # Colocar las localizaciones en el mapa
+        
+        for location in self.locations.values():
+            x, y = location.position
+            if 0 <= x - 1 < self.map_size[1] and 0 <= y - 1 < self.map_size[0]:  # Asegura que está en rango
+                bordered_map[y - 1, x - 1] = f"{location.id:2}"
+
+        # Añadir las filas al mapa
+        for row in bordered_map:
+            formatted_row = "#" + "".join([f"{cell} " if cell.strip() else "  " for cell in row]) + "#"
+            map_lines.append(formatted_row)
+
+        map_lines.append(border_row)
+
+        # Calcular el número máximo de líneas entre mapa y tabla
+        max_lines = max(len(map_lines), len(self.table_lines))
+
+        # Ajustar mapa y tabla para que tengan el mismo número de líneas
+        padded_map_lines = map_lines + [""] * (max_lines - len(map_lines))
+        padded_table_lines = self.table_lines + [""] * (max_lines - len(self.table_lines))
+
+        # Combinar mapa y tabla línea por línea
+        combined_lines = [
+            f"{map_line:<45}   {table_line}"
+            for map_line, table_line in zip(padded_map_lines, padded_table_lines)
+        ]
+
+        # Mostrar el resultado en la consola
+        print("\n".join(combined_lines))
 
 
 
@@ -418,7 +455,6 @@ class DigitalEngine:
         # Si el taxi estaba en movimiento, reanudar su camino
         if self.color == "GREEN":
             logger.info("Resuming taxi's journey.")
-            self.move_to_destination()
 
     def listen_for_sensor_data(self, conn, addr):
         logger.info(f"Connected to Sensors at {addr}")
@@ -431,19 +467,19 @@ class DigitalEngine:
                     self.handle_sensor_disconnection()
                     break
 
-                if data == "KO":
+                if data == "KO" and self.ko == 0:
+                    self.ko = 1
                     self.color = "RED"
-                    self.processing_instruction = True
+                    self.status = "KO"
                     logger.info("Taxi set to STOP. Awaiting RESUME command.")
                     self.send_position_update()
 
-                elif data == "OK":
+                elif data == "OK" and self.ko == 1:
+                    self.ko = 0
                     self.color = "GREEN"
-                    if not self.processing_instruction:
-                        logger.info("Taxi set to RESUME.")
-                        self.processing_instruction = True
-                        self.move_to_destination()
-
+                    self.status = "OK"
+                    logger.info("Taxi set to RESUME.")
+                        
             except (ConnectionResetError, ConnectionAbortedError) as e:
                 logger.error(f"Connection error: {e}")
                 self.handle_sensor_disconnection()
@@ -554,7 +590,10 @@ class DigitalEngine:
         
         threading.Thread(target=self.kafka_listener, daemon=True).start()
         threading.Thread(target=self.listen_for_sensor_data, args=(conn, addr), daemon=True).start()
-        threading.Thread(target=self.comprobador_cola, daemon=True).start()
+        threading.Thread(target=self.instruction_checker, daemon=True).start()
+        threading.Thread(target=self.movement_thread, daemon=True).start()
+        threading.Thread(target=self.map_checker, daemon=True).start()
+        threading.Thread(target=self.map_thread, daemon=True).start()
 
         # threading.Thread(target=self.listen_to_central, args=(conn,), daemon=True).start()
 

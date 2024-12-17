@@ -39,7 +39,7 @@ class Customer:
                     'taxi_responses',
                     bootstrap_servers=[self.kafka_broker],
                     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-                    enable_auto_commit=False,
+                    enable_auto_commit=True,
                     group_id=f'customer_{self.customer_id}', 
                     auto_offset_reset='earliest',
                     security_protocol='SSL',
@@ -121,8 +121,10 @@ class Customer:
                 elif status == "RESUME":
                     self.logger.info("Taxi resumed journey.")
                 elif status == "RETURN":
+                    self.customer_location = response.get('position')
                     self.logger.info("Taxi left me and went back to base.")
-                    return False
+                    self.customer_location = response.get('position')
+                    
                 
         self.logger.warning("Listener stopped unexpectedly.")
         return False

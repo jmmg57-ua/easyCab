@@ -7,12 +7,13 @@ from kafka import KafkaConsumer, KafkaProducer
 from kafka.errors import KafkaError  
 import json
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Dict, Tuple
 import threading
 import ssl
 import requests
 from requests.exceptions import RequestException
+import queue
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,21 +21,20 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Taxi:
     id: int
-    status: str  
-    color: str  
+    status: str  #FREE, BUSY, END, ERROR
+    color: str  #GREEN, RED
     position: Tuple[int, int]
     customer_assigned: str
     picked_off: int
     auth_status: int
     token: str
-    stopped: bool = False
 
 @dataclass
 class Customer:
     id: str
-    status: str  
+    status: str  #UNATTENDED, WAITING, TRANSIT, SERVICED, 
     position: Tuple[int, int]
-    destination: Tuple[int, int]
+    destination: str
     taxi_assigned: int
     picked_off: int
 
@@ -164,13 +164,15 @@ class ECCentral:
         self.map = np.full(self.map_size, ' ', dtype=str)
         self.locations: Dict[str, Location] = {}
         self.taxis_file = '/data/taxis.json'
+        self.customers_file = '/data/customers.json'
         self.taxis: Dict[int, Taxi] = {}  
         self.customers: Dict[int, Customer] = {}
-        self.customer_destinations = {}
         self.map_changed = False  
-        self.taxi_lock = threading.Lock()
+        self.assign_taxi_lock = threading.Lock()
         self.setup_kafka()
         self.traffic_monitor = TrafficMonitor(self)
+        self.requests_q = queue.Queue()
+        self.updates_q = queue.Queue()
 
     def setup_kafka(self):
         retry_count = 0
@@ -281,10 +283,61 @@ class ECCentral:
         except Exception as e:
             logger.error(f"Error saving taxis to JSON file: {e}")
 
+    def load_customers(self):
+        """Carga los taxis desde el archivo JSON, soportando formato lista o diccionario."""
+        self.customers = {}  # Reiniciar el diccionario
+        try:
+            with open(self.customers_file, 'r') as f:
+                content = f.read().strip()
+                if not content:
+                    logger.warning("Taxis JSON file is empty. Starting with an empty dictionary.")
+                    return
+
+                customer_data = json.loads(content)
+                if isinstance(customer_data, dict):
+                    for customer_id, customer_info in customer_data.items():
+                        self.customers[int(customer_id)] = Customer(
+                            id=customer_info["id"],
+                            status=customer_info["status"],
+                            position=tuple(customer_info["position"]),
+                            destination=customer_info["destination"],
+                            taxi_assigned=customer_info["taxi_assigned"],
+                            picked_off=int(customer_info["picked_off"]),
+                        )
+                else:
+                    raise ValueError("Unexpected JSON format. Must be a list or dictionary.")
+        except FileNotFoundError:
+            logger.warning("Customers JSON file not found. Starting with an empty dictionary.")
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON: {e}. Starting with an empty dictionary.")
+        except Exception as e:
+            logger.error(f"Error loading customers from JSON file: {e}")
+
+
+
+    def save_customers(self):
+        """Guarda los customers desde el diccionario interno al archivo JSON en formato diccionario."""
+        try:
+            customer_dict = {
+                customer.id: {
+                    "id": customer.id,
+                    "status": customer.status,
+                    "position": list(customer.position),
+                    "destination": customer.destination,
+                    "taxi_assigned": int(customer.taxi_assigned),
+                    "picked_off": int(customer.picked_off)
+                }
+                for customer in self.customers.values()
+            }
+            with open(self.customers_file, 'w') as f:
+                json.dump(customer_dict, f, indent=4)
+        except Exception as e:
+            logger.error(f"Error saving customers to JSON file: {e}")
+
 
     def handle_taxi_auth(self, conn, addr):
         """Maneja la autenticación del taxi."""
-        logger.info(f"Secure onnection from taxi at {addr}")
+        logger.info(f"Secure connection from taxi at {addr}")
         try:
             data = conn.recv(1024).decode('utf-8')
             taxi_id = int(data.strip())
@@ -327,9 +380,11 @@ class ECCentral:
                     logger.info(f"Taxi {taxi_id} has disconnected. Marking as KO.")
                     if taxi_id in self.taxis:
                         taxi = self.taxis[taxi_id]
+                        self.locations[taxi_id].id = "X"
                         taxi.status = "KO"
                         taxi.auth_status = 1  # Mantener autenticación
                         self.save_taxis()
+                        self.map_changed = True
                         
                         # Notificar al cliente si hay uno asignado
                         if taxi.customer_assigned != "x":
@@ -338,7 +393,9 @@ class ECCentral:
                     # Esperar 10 segundos antes de considerarlo una incidencia permanente
                     time.sleep(10)
                     del self.taxis[taxi_id]
+                    del self.locations[taxi_id]
                     self.save_taxis()
+                    self.map_changed = True
                     logger.info(f"Marking taxi {taxi_id} as inactive on the map.")
                     break
 
@@ -358,7 +415,9 @@ class ECCentral:
                 'assigned_taxi': taxi.id,
                 'final_position': taxi.position
             }
-            self.producer.send('taxi_responses', response).get(timeout=3)  # Bloquea hasta que el mensaje se envíe
+            self.producer.send('taxi_responses', response) 
+            self.producer.flush()  # Asegura el envío inmediato
+
             logger.info(f"Trip completed sending to customer {taxi.customer_assigned}: {response}")
         except KafkaError as e:
             logger.error(f"Failed to notify customer {taxi.customer_assigned}: {e}")
@@ -385,8 +444,8 @@ class ECCentral:
             color = update['color']
             customer_assigned = update['customer_id']
             picked_off = update['picked_off']
-            self.update_customer(customer_assigned, self.taxis[taxi_id])
             taxi_updated = self.update_taxi_state(taxi_id, pos_x, pos_y, status, color, customer_assigned, picked_off, token)
+            self.update_customer(customer_assigned, taxi_id)
             self.finalize_trip_if_needed(taxi_updated)
             self.map_changed= True
         
@@ -423,84 +482,13 @@ class ECCentral:
         """Notifica al cliente si el taxi ha finalizado el viaje."""
         if taxi.status == "END":
             self.map_changed = True
-            if taxi.customer_assigned != "x":
-                self.customers[taxi.customer_assigned].status = "SERVICED"
+            self.update_customer(taxi.customer_assigned, taxi.id)
             self.save_taxis()
-            if taxi.customer_assigned != "x":
-                self.notify_customer(taxi)
+            self.notify_customer(taxi)
             
 
         
-    def generate_table(self):
-        """Genera la tabla de estado de taxis y clientes con el menú fijo 12 líneas debajo del título."""
-        if not self.taxis:
-            logger.error("Taxis not initialized or empty. Cannot generate table.")
-            return "No data available."
-        
-        table_lines = []
-        table_lines.append("               *** EASY CAB ***        ")
-        table_lines.append("     TAXIS                           CLIENTES   ")
-        table_lines.append(f"{'Id':<4}{'Destino':<10}{'Estado':<15}   {'Id':<4}{'Destino':<10}{'Estado':<15}")
-
-        taxi_lines = []
-        for taxi in self.taxis.values():
-            if taxi.auth_status != 1:  # Solo mostrar taxis autenticados
-                continue
-            taxi_id = taxi.id
-            # Obtener la destinación del cliente asignado si existe
-            if taxi.customer_assigned != "x" and taxi.customer_assigned in self.customer_destinations:
-                destination = self.customer_destinations[taxi.customer_assigned]
-            else:
-                destination = "-"
-
-            # Determinar el estado del taxi
-            if taxi.status in ["KO", "SENSOR", "ERROR", "DOWN"]:
-                state = "KO. Parado"
-            elif taxi.customer_assigned == "x":
-                state = "OK. Libre"
-            else:
-                state = f"OK. Servicio {taxi.customer_assigned}"
-
-            taxi_lines.append(f"{taxi_id:<4}{destination:<10}{state:<15}")
-
-        client_lines = []
-        for customer_id, destination in self.customers.items():
-            customer = self.customers[customer_id]
-            if customer.status == "SERVICED":
-                state = "OK. Servicio finalizado"
-            elif customer.status == "UNATTENDED":
-                state = "OK. Sin taxi asignado"
-            elif customer.status == "WAIT":
-                state = f"OK. Esperando a Taxi {customer.taxi_assigned}"
-            elif customer.picked_off == 1:
-                state = f"OK. Taxi {customer.taxi_assigned}"
-
-            client_lines.append(f"{customer_id:<4}{customer.destination:<10}{state:<15}")
-
-        max_lines = max(len(taxi_lines), len(client_lines))
-        for i in range(max_lines):
-            taxi_info = taxi_lines[i] if i < len(taxi_lines) else " " * 30
-            client_info = client_lines[i] if i < len(client_lines) else ""
-            table_lines.append(f"{taxi_info} | {client_info}")
-
-        # Calcular el número de líneas necesarias para fijar el menú a 12 líneas debajo del título
-        lines_after_title = len(table_lines) - 3  # Resta las líneas del título de la tabla
-        padding_lines = max(0, 12 - lines_after_title)
-
-        # Añadir las líneas en blanco
-        table_lines.extend([""] * padding_lines)
-
-        # Añadir el menú de órdenes al final de la tabla
-        menu_lines = [
-            "Órdenes de Central:",
-            "- Parar un taxi:  '<ID_Taxi>'",
-            "- Reanudar marcha: '<ID_Taxi>'",
-            "- Enviar un taxi a base: 'b <ID_Taxi>'.",
-            "- Cambiar destino: '<ID_Taxi> <ID_Location>'."
-        ]
-        table_lines.extend(menu_lines)
-
-        return "\n".join(table_lines)
+    
 
     def stop_continue(self, taxi_id):
         self.load_taxis()
@@ -512,23 +500,22 @@ class ECCentral:
                     'type': instruction_type,
                 }
                 # Toggle color based on current state
-                self.taxis[taxi_id].color = "RED" if instruction_type == 'STOP' else "GREEN"
                 logger.info(f"Central ordered taxi {taxi_id} to {instruction_type}")
-                self.producer.send('taxi_instructions', instruction).get(timeout=3)  # Ensure Kafka delivery
+                self.producer.send('taxi_instructions', instruction)
                 
                 notification = {
                     'customer_id': self.taxis[taxi_id].customer_assigned,
                     'status': instruction_type,
                     'assigned_taxi': taxi_id,
                 }
-            
-                print(f"Notifying customer '{self.taxis[taxi_id].customer_assigned}'")
-
-                self.producer.send('taxi_responses', notification)
+                if self.taxis[taxi_id].customer_assigned != "x":
+                    print(f"Notifying customer '{self.taxis[taxi_id].customer_assigned}'")
+                    self.producer.send('taxi_responses', notification)
+                
             except KafkaError as e:
                 logger.error(f"Error in the order communication for taxi {taxi_id} {e}")
         
-
+    #PROBAR
     def return_to_base(self, taxi_id):
         self.load_taxis()
         if taxi_id in self.taxis:
@@ -545,11 +532,14 @@ class ECCentral:
                         'customer_id': self.taxis[taxi_id].customer_assigned,
                         'status': "RETURN",
                         'assigned_taxi': taxi_id,
+                        'position':  self.taxis[taxi_id].position
                     }
+                self.customers[self.taxis[taxi_id].customer_assigned].position = self.taxis[taxi_id].position
                 
                 print(f"Notifying customer '{self.taxis[taxi_id].customer_assigned}'")
-
+                self.update_customer(self.taxis[taxi_id].customer_assigned, "x")
                 self.producer.send('taxi_responses', notification)
+                self.producer.flush()
 
             except KafkaError as e:
                 logger.error(f"Error in the order communication for taxi {taxi_id} {e}")
@@ -583,6 +573,77 @@ class ECCentral:
             else:
                 print(f"Destino {destination} no encontrado.")
 
+    def generate_table(self):
+        """Genera la tabla de estado de taxis y clientes con el menú fijo 12 líneas debajo del título."""
+        if not self.taxis:
+            logger.error("Taxis not initialized or empty. Cannot generate table.")
+            return "No data available."
+        
+        table_lines = []
+        table_lines.append("               *** EASY CAB ***        ")
+        table_lines.append("     TAXIS                           CLIENTES   ")
+        table_lines.append(f"{'Id':<4}{'Destino':<10}{'Estado':<15}     {'Id':<4}{'Destino':<10}{'Estado':<15}")
+
+        taxi_lines = []
+        for taxi in self.taxis.values():
+            if taxi.auth_status != 1:  # Solo mostrar taxis autenticados
+                continue
+            taxi_id = taxi.id
+            # Obtener la destinación del cliente asignado si existe
+            if taxi.customer_assigned != "x" and taxi.customer_assigned:
+                destination = self.customers[taxi.customer_assigned].destination
+            else:
+                destination = "-"
+
+            # Determinar el estado del taxi
+            if taxi.status in ["KO", "SENSOR", "ERROR", "DOWN"]:
+                state = "KO. Parado"
+            elif taxi.customer_assigned == "x":
+                state = "OK. Libre"
+            else:
+                state = f"OK. Servicio {taxi.customer_assigned}"
+
+            taxi_lines.append(f"{taxi_id:<4}{destination:<10}{state:<15}")
+
+        client_lines = []
+        for customer_id, destination in self.customers.items():
+            customer = self.customers[customer_id]
+            if customer.status == "SERVICED":
+                state = "OK. Servicio finalizado"
+            elif customer.status == "UNATTENDED":
+                state = "OK. Sin taxi asignado"
+            elif customer.status == "WAIT":
+                state = f"OK. Esperando a Taxi {customer.taxi_assigned}"
+            elif customer.picked_off == 1:
+                state = f"OK. Taxi {customer.taxi_assigned}"
+
+            client_lines.append(f"{customer_id:<4}{customer.destination:<10}{state:<15}")
+
+        max_lines = max(len(taxi_lines), len(client_lines))
+        for i in range(max_lines):
+            taxi_info = taxi_lines[i] if i < len(taxi_lines) else " " * 30
+            client_info = client_lines[i] if i < len(client_lines) else ""
+            table_lines.append(f"{taxi_info:<30} | {client_info:<30}")
+
+        # Calcular el número de líneas necesarias para fijar el menú a 12 líneas debajo del título
+        lines_after_title = len(table_lines) - 3  # Resta las líneas del título de la tabla
+        padding_lines = max(0, 12 - lines_after_title)
+
+        # Añadir las líneas en blanco
+        table_lines.extend([""] * padding_lines)
+
+        # Añadir el menú de órdenes al final de la tabla
+        menu_lines = [
+            "Órdenes de Central:",
+            "- Parar un taxi:  '<ID_Taxi>'",
+            "- Reanudar marcha: '<ID_Taxi>'",
+            "- Enviar un taxi a base: 'b <ID_Taxi>'.",
+            "- Cambiar destino: '<ID_Taxi> <ID_Location>'."
+        ]
+        table_lines.extend(menu_lines)
+
+        return "\n".join(table_lines)
+
     def draw_map(self):
         """Dibuja el mapa y la tabla de estado lado a lado en la consola."""
         table = self.generate_table()
@@ -594,20 +655,16 @@ class ECCentral:
 
         bordered_map = np.full((self.map_size[0], self.map_size[1]), ' ', dtype=str)
 
+        for customer in self.customers.values():
+            self.locations[customer.id] = Location(customer.id, customer.position, "YELLOW")
+        for taxi in self.taxis.values():
+            self.locations[str(taxi.id)] = Location(str(taxi.id), taxi.position, taxi.color)
+       
+
         # Colocar las localizaciones en el mapa
         for location in self.locations.values():
             x, y = location.position
-            bordered_map[y - 1, x - 1] = location.id.ljust(2)
-
-        # Colocar los taxis autenticados en el mapa
-        for taxi in self.taxis.values():
-            
-            x, y = taxi.position
-            if 1 <= x <= self.map_size[1] and 1 <= y <= self.map_size[0]:
-                if taxi.status == "DOWN":
-                    bordered_map[y - 1, x - 1] = "X "
-                elif taxi.auth_status == 1:
-                    bordered_map[y - 1, x - 1] = str(taxi.id).ljust(2)
+            bordered_map[y - 1, x - 1] = f"{location.id:2}"
 
         # Añadir las filas al mapa
         for row in bordered_map:
@@ -639,26 +696,35 @@ class ECCentral:
 
     def broadcast_map(self):
         """
-        Envía el estado actual del mapa a todos los taxis a través del tópico 'map_updates'.
+        Convierte el diccionario self.locations a un formato JSON y lo envía a través de Kafka.
         """
-        if self.producer:
-            try:
-                map_data = {
-                    'map': self.map.tolist(),
-                    'taxis': {k: {'position': v.position, 'status': v.status, 'color': v.color} 
-                                for k, v in self.taxis.items()},
-                    'locations': {k: {'position': v.position, 'color': v.color}
-                                    for k, v in self.locations.items()}
-                }
-                self.producer.send('map_updates', map_data)
-            except KafkaError as e:
-                logger.error(f"Error broadcasting map: {e}")
+        try:
+            # Convertir self.locations a un formato serializable en JSON
+            serialized_dict = {key: asdict(location) for key, location in self.locations.items()}
+            map_data = serialized_dict
+
+            # Generar la tabla como una lista de líneas
+            table_data = self.generate_table().split('\n')
+            # Crear el mensaje a enviar
+            message = {
+                "type": "MAP_UPDATE",
+                "timestamp": time.time(),
+                "map": map_data,
+                "table": table_data
+            }
+            
+            # Enviar el mensaje al tópico correspondiente en Kafka
+            self.producer.send('map_updates', message)
+            self.producer.flush()  # Asegurarse de que el mensaje se envíe inmediatamente
+            
+        except Exception as e:
+            logger.error(f"Error al enviar el mapa a los taxis: {e}")
+
 
     def register_customer(self, customer_id, position, destination):
         if not isinstance(customer_id, str) or not isinstance(position, (list, tuple)) or not isinstance(destination, str):
             logger.error(f"Invalid customer data: id={customer_id}, position={position}, destination={destination}")
             return False
-        
         if customer_id not in self.customers:
             self.customers[customer_id] = Customer(
                 id=customer_id,
@@ -668,7 +734,7 @@ class ECCentral:
                 taxi_assigned=0,
                 picked_off=0,
             )
-            return True
+            self.save_customers()
         else:
             customer = self.customers[customer_id]
             customer.status ="UNATTENDED"
@@ -676,46 +742,36 @@ class ECCentral:
             customer.destination=destination
             customer.taxi_assigned=0
             customer.picked_off=0
+            self.save_customers()
+
+        self.map_changed = True
 
 
     def process_customer_request(self, request):
+        print(f"RECIBIDA REQUEST: {request}")
         if request['status'] == "REQUEST":
             customer_id = request['customer_id']
             destination = request['destination']
             customer_location = request['customer_location']
-            destination = destination
-            self.customer_destinations[customer_id] = destination
 
-            # Mover la asignación a un hilo separado
-            # Comprobar que no se asignen 1 taxi a dos clientes a la vez (secundario)
-            threading.Thread(target=self._assign_taxi_thread, args=(customer_id, customer_location, destination), daemon=True).start()
+            self.assign_taxi(customer_id, customer_location, destination)
         else:
             del self.customers[request['customer_id']]
+            del self.locations[request['customer_id']]
+            self.map_changed = True
 
-    def _assign_taxi_thread(self, customer_id, customer_location, destination):
-        self.customer_destinations[customer_id] = destination
-
-        if customer_location:
-            location_key = tuple(customer_location)
-            self.locations[customer_id] = Location(customer_id, location_key, 'YELLOW')
-            self.map_changed = True  
+    def assign_taxi(self, customer_id, customer_location, destination):
+        #guarda la posicion del customer en location
 
         if destination not in self.locations:
             logger.error(f"Invalid destination: {destination}")
             return False
 
         self.register_customer(customer_id, customer_location, destination)
-
-        available_taxi = self.select_available_taxi(customer_id)
-        if available_taxi and available_taxi.status == "FREE":
-            self.assign_taxi_to_customer(available_taxi, customer_id, location_key, destination)
-            self.map_changed = True
-        else:
-            logger.warning(f"No available taxis for customer '{customer_id}'.")
-            self.notify_customer_assignment(customer_id, 0)
+        self.select_available_taxi(customer_id)
 
 
-    def select_available_taxi(self, customer):
+    def select_available_taxi(self, customer_id):
         """Selecciona el primer taxi disponible con estado 'FREE'."""
         max_retries = 3
         retry_count = 0
@@ -723,43 +779,59 @@ class ECCentral:
         while retry_count < max_retries:
             self.load_taxis()
             available_taxi = next((taxi for taxi in self.taxis.values() if taxi.status == 'FREE' and taxi.customer_assigned == "x" and taxi.auth_status == 1), None)
-
+            
             if available_taxi:
                 logger.info(f"Taxi disponible encontrado: {available_taxi.id}")
-                return available_taxi
+                available_taxi.status = "BUSY"
+                available_taxi.customer_assigned = customer_id
+                self.save_taxis()
+                self.update_customer(customer_id, available_taxi.id)
+                self.map_changed = True
+                self.notify_customer_assignment(customer_id, available_taxi)
+                self.send_taxi_instruction(available_taxi, customer_id, self.customers[customer_id].position, self.customers[customer_id].destination)
+                return
             else:
-                logger.info(f"No se encontró taxi para el cliente '{customer}', reintentando en 3 segundos...")
+                logger.info(f"No se encontró taxi para el cliente '{customer_id}', reintentando en 3 segundos...")
                 time.sleep(3)
                 retry_count += 1
 
-        logger.warning(f"No se pudo encontrar un taxi disponible para el cliente '{customer}' después de {max_retries} intentos.")
+        logger.warning(f"No se pudo encontrar un taxi disponible para el cliente '{customer_id}' después de {max_retries} intentos.")
         return None
 
     # manejar taxis vacios, taxi no tiene clientes...
-    def update_customer(self, customer_id, taxi):
-        if customer_id in self.customers:
-            customer = self.customers[customer_id]
-            customer.taxi_assigned = taxi.id
-            customer.status = "WAIT"
-            customer.picked_off = taxi.picked_off
-            if customer.picked_off == 1:
-                customer.position = taxi.position
-            self.locations[customer_id].position = customer.position
-            
-            
-
-    def assign_taxi_to_customer(self, taxi, customer_id, customer_location, destination):
-        """Asigna el taxi al cliente y envía instrucciones."""
-        self.load_taxis()  # Asegurar datos actualizados
-        if taxi.id in self.taxis:
-            taxi.status = 'BUSY'
-            taxi.color = 'GREEN'
-            taxi.customer_assigned = customer_id
-            self.save_taxis()
-        self.update_customer(customer_id, taxi)
+    def update_customer(self, customer_id, taxi_id):
+        if taxi_id in self.taxis:
+            taxi = self.taxis[taxi_id]
+            if customer_id in self.customers:
+                customer = self.customers[customer_id]
+                if not isinstance(customer_id, str) or not isinstance(customer.position, (list, tuple)) or not isinstance(customer.destination, str):
+                    logger.error(f"Invalid customer data: id={customer_id}, position={customer.position}, destination={customer.destination} en update")
+                    return False
+                if taxi.status == "END":
+                    customer.status="SERVICED"
+                    customer.position=taxi.position
+                    customer.taxi_assigned=0
+                    customer.picked_off=0
+                    self.save_customers()
+                else:
+                    customer.taxi_assigned = taxi.id
+                    customer.picked_off = taxi.picked_off
+                    if taxi.picked_off == 1:
+                        customer.status = "TRANSIT"
+                        customer.position = taxi.position
+                    else:
+                        customer.status = "WAIT"
+                    self.save_customers()
+        else:
+            if customer_id in self.customers:
+                customer = self.customers[customer_id]
+                customer.status="UNATTENDED"
+                customer.taxi_assigned=0
+                customer.picked_off=0
+                self.save_customers()
+                self.assign_taxi(customer_id, customer.position, customer.destination)
         self.map_changed = True
-        self.notify_customer_assignment(customer_id, taxi)
-        self.send_taxi_instruction(taxi, customer_id, customer_location, destination)
+
 
     def send_taxi_instruction(self, taxi, customer_id, pickup_location, destination):
         """Envía instrucciones al taxi para recoger al cliente y llevarlo al destino."""
@@ -774,11 +846,13 @@ class ECCentral:
             'customer_id': customer_id
         }
         self.producer.send('taxi_instructions', instruction)
+        self.producer.flush()  # Asegura el envío inmediato
         logger.info(f"Instructions sent to taxi {taxi.id} for customer '{customer_id}'")
 
     def notify_customer_assignment(self, customer_id, taxi):
         """Envía una respuesta al cliente confirmando la asignación del taxi."""
-        if taxi == 0:
+        
+        if taxi.id == 0:
             response = {
             'customer_id': customer_id,
             'status': "KO",
@@ -819,17 +893,41 @@ class ECCentral:
             self.update_map(data)
 
 
+    def request_checker(self):
+        while True:
+            try:
+                # Obtener la próxima instrucción de la cola
+                request = self.requests_q.get()
+                self.process_customer_request(request)
+            except queue.Empty:
+                # Si no hay instrucciones, continuar
+                continue
+            except Exception as e:
+                logger.error(f"Error while processing customer request: {e}")
+
+    def update_checker(self):
+        while True:
+            try:
+                # Obtener la próxima instrucción de la cola
+                update = self.updates_q.get()
+                self.process_update(update)
+            except queue.Empty:
+                # Si no hay instrucciones, continuar
+                continue
+            except Exception as e:
+                logger.error(f"Error while processing taxi update: {e}")
+
     def kafka_listener(self):
         while True:
             try:
                 for message in self.consumer:
                     if message.topic == 'taxi_requests':
                         data = message.value
-                        self.process_customer_request(data)
+                        self.requests_q.put(data)
                         
                     elif message.topic == 'taxi_updates':
                         data = message.value
-                        self.process_update(data)
+                        self.updates_q.put(data)
 
             except KafkaError as e:
                 logger.error(f"Kafka listener error: {e}")
@@ -929,6 +1027,7 @@ class ECCentral:
 
     def run(self):
         self.load_map_config()
+        self.clear_taxis()
         self.load_taxis()
         logger.info("EC_Central is running...")
 
@@ -948,6 +1047,9 @@ class ECCentral:
 
         kafka_thread = threading.Thread(target=self.kafka_listener, daemon=True)
         kafka_thread.start()
+
+        threading.Thread(target=self.request_checker, daemon=True).start()
+        threading.Thread(target=self.update_checker, daemon=True).start()
 
         map_thread = threading.Thread(target=self.auto_broadcast_map, daemon=True)
         map_thread.start()

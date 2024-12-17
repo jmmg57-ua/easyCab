@@ -193,8 +193,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_customer
-    depends_on:
-      - kafka
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts
@@ -205,8 +203,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_customer
-    depends_on:
-      - kafka
     volumes:
       - ./data:/data
     # <<: *x-common-extra-hosts
@@ -217,8 +213,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_customer
-    depends_on:
-      - kafka
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts
@@ -229,8 +223,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_customer
-    depends_on:
-      - kafka
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts
@@ -241,8 +233,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ec_customer
-    depends_on:
-      - kafka
     volumes:
       - ./data:/data 
     # <<: *x-common-extra-hosts
