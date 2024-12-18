@@ -90,6 +90,22 @@ services:
     command: >
       node ec_registry.js
 
+  api_central:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api_central
+    stdin_open: true       # Para habilitar la entrada estándar interactiva
+    tty: true  
+    ports:
+      - "11000:11000"
+    volumes:
+      - ./data:/app/data
+      - ./src/API_central:/app
+    environment:
+      - API_CENTRAL_PORT=11000
+    command: >
+      node api_central.js
+
 
   dengine1:
     build:

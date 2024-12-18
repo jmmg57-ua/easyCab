@@ -1,0 +1,18 @@
+# Usa una imagen base de Node.js ligera
+FROM node:16
+
+# Establece el directorio de trabajo dentro del contenedor
+WORKDIR /app
+
+# Copia el archivo package.json y package-lock.json al contenedor
+COPY ./src/API_central/package*.json ./
+
+# Instala las dependencias necesarias
+RUN npm install
+
+# Copia el resto del código fuente al contenedor
+COPY ./src/API_central .
+
+# Expone el puerto que utiliza el servicio Registry
+EXPOSE 11000
+
