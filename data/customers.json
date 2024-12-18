@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
     "d": {
         "id": "d",
         "status": "UNATTENDED",
@@ -52,6 +53,17 @@
         ],
         "destination": "C",
         "taxi_assigned": 0,
+=======
+    "a": {
+        "id": "a",
+        "status": "WAIT",
+        "position": [
+            15,
+            1
+        ],
+        "destination": "G",
+        "taxi_assigned": 5,
+>>>>>>> develop
         "picked_off": 0
     }
 }
