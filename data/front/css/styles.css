@@ -1,0 +1,52 @@
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.map-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.map {
+    display: grid;
+    grid-template-columns: repeat(20, 30px);
+    grid-template-rows: repeat(20, 30px);
+    gap: 1px;
+    background-color: #ccc;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+.cell {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: white;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.taxi {
+    background-color: #ff000033;
+}
+
+.taxi.green {
+    background-color: #00ff0033;
+}
+
+.location {
+    background-color: #0000ff33;
+}
+
+.customer {
+    background-color: #ffff0033;
+}
+
+.combined {
+    background-color: #80008033;
+}
