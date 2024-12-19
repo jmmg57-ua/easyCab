@@ -1,29 +1,29 @@
 {
     "5": {
         "id": 5,
-        "status": "BUSY",
-        "color": "GREEN",
+        "status": "FREE",
+        "color": "RED",
         "position": [
-            15,
-            5
+            20,
+            20
         ],
-        "customer_assigned": "a",
+        "customer_assigned": "x",
         "picked_off": 0,
         "authenticated": 1,
-        "token": "1460a96c-5258-462b-a003-c99562c0313d"
+        "token": "2742407b-8d5a-4d87-a6e2-95b27c0098c0"
     },
     "4": {
         "id": 4,
         "status": "FREE",
         "color": "RED",
         "position": [
-            15,
-            1
+            20,
+            10
         ],
         "customer_assigned": "x",
         "picked_off": 0,
         "authenticated": 1,
-        "token": "2ee08067-cc04-4be9-948e-b4164abe5e70"
+        "token": "58462119-43ba-4fe9-83e6-86d8f598c306"
     },
     "3": {
         "id": 3,
@@ -36,7 +36,7 @@
         "customer_assigned": "x",
         "picked_off": 0,
         "authenticated": 1,
-        "token": "ad97d50d-0c1f-40e6-9281-aab8552c7287"
+        "token": "79915ecd-e6dd-4cc8-830c-98f7465e3dff"
     },
     "2": {
         "id": 2,
@@ -49,7 +49,7 @@
         "customer_assigned": "x",
         "picked_off": 0,
         "authenticated": 1,
-        "token": "dd10411a-dd4d-4b7f-b9e7-5c6a27182641"
+        "token": "4405b80e-f5f6-4fc6-846f-a43dc7ff4786"
     },
     "1": {
         "id": 1,
@@ -57,11 +57,11 @@
         "color": "RED",
         "position": [
             10,
-            10
+            20
         ],
         "customer_assigned": "x",
         "picked_off": 0,
         "authenticated": 1,
-        "token": "746ac1c6-c9ec-444a-89a2-3a2f0a485439"
+        "token": "721b897f-f5d6-4a88-96de-072461512b93"
     }
 }

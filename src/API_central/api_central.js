@@ -2,6 +2,8 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const fs = require("fs");
 const path = require("path");
+const axios = require("axios");
+const cors = require("cors");
 
 // Configuración inicial
 const port = 11000;
@@ -39,6 +41,7 @@ function loadTaxis() {
     }
 }
 
+app.use(cors());
 // Función para cargar los datos del archivo JSON
 function loadCustomers() {
     try {
@@ -81,6 +84,16 @@ function loadLogs() {
     }
 }
 
+function loadMapConfig() {
+    try {
+        const data = fs.readFileSync('./data/map_config.json', "utf8");
+        return JSON.parse(data);
+    } catch (error) {
+        console.error("Error al cargar map_config.json:", error);
+        return {};
+    }
+}
+
 // Endpoint para listar los registros de auditoría
 app.get("/logs", (req, res) => {
     const logs = loadLogs();
@@ -97,6 +110,11 @@ app.get("/taxis", (req, res) => {
 app.get("/customers", (req, res) => {
     const customers = loadCustomers();
     return res.status(200).json(Object.values(customers));
+});
+
+app.get("/locations", (req, res) => {
+    const locations = loadMapConfig();
+    return res.status(200).json(locations);
 });
 
 // Ruta raíz

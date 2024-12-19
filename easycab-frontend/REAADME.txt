@@ -1,0 +1,5 @@
+hacer:
+
+node install
+node install cors
+node run build (para que se inicie en localhost si se quiere probar)
