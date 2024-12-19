@@ -350,10 +350,10 @@ class ECCentral:
             self.producer.flush()  # Asegura el envío inmediato
 
             logger.info(f"Trip completed sending to customer {taxi.customer_assigned}: {response}")
-            self.log_audit(f"Trip completed sending to customer {taxi.customer_assigned}: {response}")
+            self.log_audit("Customers", f"Trip completed sending to customer {taxi.customer_assigned}: {response}")
         except KafkaError as e:
             logger.error(f"Failed to notify customer {taxi.customer_assigned}: {e}")
-            self.log_audit(f"Failed to notify customer {taxi.customer_assigned}: {e}")
+            self.log_audit("Customers", f"Failed to notify customer {taxi.customer_assigned}: {e}")
 
 
     
@@ -400,7 +400,7 @@ class ECCentral:
                 taxi.picked_off = picked_off
                 self.map_changed = True  
                 self.save_taxis()
-                self.log_audit("Taxis", f"Taxi {taxi_id} está en {taxi.position} con status {status} y customer {customer_assigned}")
+                self.log_audit("Taxis", f"Taxi {taxi_id} está en {taxi.position} con status {taxi.status} y customer {taxi.customer_assigned}")
                 return taxi 
             else:
                 logger.warning(f"Token missmatch {taxi_id}")

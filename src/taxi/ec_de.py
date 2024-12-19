@@ -194,8 +194,8 @@ class DigitalEngine:
     def process_instruction(self, instruction):
         if instruction['type'] == 'STOP':
             logger.info("INSTRUCCION STOP")
-            self.status = "KO"
             self.color = "RED"
+            self.status = "KO"
             return 
 
         elif instruction['type'] == 'RESUME':
@@ -245,15 +245,15 @@ class DigitalEngine:
                     time.sleep(1)
                     continue
                 
+                elif self.status == "KO" or self.color == "RED":
+                    time.sleep(1)
+                    continue
+                
                 # Finalizar el viaje si llega al destino
                 elif self.position == self.destination:
                     self.finalize_trip()
                     time.sleep(4)
                     self.send_position_update()
-                    continue
-            
-                elif self.status == "KO" or self.color == "RED":
-                    time.sleep(1)
                     continue
                 
                 elif not isinstance(self.destination, (list, tuple)):
