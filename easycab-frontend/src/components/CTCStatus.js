@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import axios from 'axios';
 
 const StatusContainer = styled.div`
   margin: 20px 0;
@@ -32,52 +31,45 @@ const Label = styled.span`
   margin-right: 5px;
 `;
 
-const CTCStatus = () => {
-  const [status, setStatus] = useState({
-    status: 'Loading...',
-    city: 'Loading...',
-    temperature: 'Loading...'
-  });
-
-  useEffect(() => {
-    const fetchStatus = async () => {
-      try {
-        const response = await axios.get('http://localhost:5000/api/traffic-status');
-        setStatus(response.data);
-      } catch (error) {
-        console.error('Error fetching CTC status:', error);
-        setStatus({
-          status: 'ERROR',
-          city: 'Error de conexión',
-          temperature: 'N/A'
-        });
-      }
-    };
-
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 5000);
-    return () => clearInterval(interval);
-  }, []);
+const CTCStatus = ({ weather }) => {
+  if (!weather || !weather.city || !weather.status) {
+    return (
+      <StatusContainer status="ERROR">
+        <StatusHeader status="ERROR">
+          Estado del Tráfico: Error
+        </StatusHeader>
+        <StatusInfo>
+          <InfoItem>
+            <Label>Ciudad:</Label>
+            N/A
+          </InfoItem>
+          <InfoItem>
+            <Label>Temperatura:</Label>
+            N/A
+          </InfoItem>
+        </StatusInfo>
+      </StatusContainer>
+    );
+  }
 
   return (
-    <StatusContainer status={status.status}>
-      <StatusHeader status={status.status}>
-        Estado del Tráfico: {status.status}
+    <StatusContainer status={weather.status}>
+      <StatusHeader status={weather.status}>
+        Estado del Tráfico: {weather.status}
       </StatusHeader>
       <StatusInfo>
         <InfoItem>
           <Label>Ciudad:</Label>
-          {status.city}
+          {weather.city}
         </InfoItem>
         <InfoItem>
           <Label>Temperatura:</Label>
-          {typeof status.temperature === 'number' 
-            ? `${status.temperature.toFixed(1)}°C`
-            : status.temperature}
+          {typeof weather.temperature === 'number'
+            ? `${weather.temperature.toFixed(1)}°C`
+            : weather.temperature}
         </InfoItem>
       </StatusInfo>
     </StatusContainer>
   );
 };
-
 export default CTCStatus;

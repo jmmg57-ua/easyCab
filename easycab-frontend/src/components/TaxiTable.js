@@ -27,8 +27,6 @@ const TaxiTable = ({ taxis }) => (
         <Th>Estado</Th>
         <Th>Color</Th>
         <Th>Cliente</Th>
-        <Th>Autenticado</Th>
-        <Th>Token</Th>
       </tr>
     </thead>
     <tbody>
@@ -38,8 +36,6 @@ const TaxiTable = ({ taxis }) => (
           <Td>{taxi.status}</Td>
           <Td>{taxi.color}</Td>
           <Td>{taxi.customer_assigned}</Td>
-          <Td>{taxi.authenticated ? 'Sí' : 'No'}</Td>
-          <Td>{taxi.token.slice(0, 8)}...</Td>
         </tr>
       ))}
     </tbody>

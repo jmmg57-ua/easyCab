@@ -2,7 +2,7 @@ import requests
 import json
 import time
 
-NODEJS_URL = "http://localhost:5000"
+NODEJS_URL = "http://ctc:5000"
 current_city = "Alicante"
 current_api_key = "70656a4c102bee1ed903fcb7e3938267"
 

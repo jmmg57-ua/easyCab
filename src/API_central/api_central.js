@@ -11,6 +11,8 @@ const app = express();
 const taxisFilePath = "./data/taxis.json"; // Ruta del archivo JSON
 const customersFilePath = "./data/customers.json";
 const auditFilePath = "./data/audit.json";
+const weatherFilePath = "./data/weather.json"; // Archivo del clima
+
 
 // Middleware para procesar JSON
 app.use(bodyParser.json());
@@ -84,6 +86,17 @@ function loadLogs() {
     }
 }
 
+// Función para cargar los datos del archivo weather.json
+function loadWeather() {
+    try {
+        const data = fs.readFileSync(weatherFilePath, "utf8");
+        return JSON.parse(data);
+    } catch (error) {
+        console.error("Error al cargar weather.json:", error);
+        return { error: "No se pudo cargar el archivo de clima." };
+    }
+}
+
 function loadMapConfig() {
     try {
         const data = fs.readFileSync('./data/map_config.json', "utf8");
@@ -115,6 +128,12 @@ app.get("/customers", (req, res) => {
 app.get("/locations", (req, res) => {
     const locations = loadMapConfig();
     return res.status(200).json(locations);
+});
+
+// Endpoint para obtener los datos del clima
+app.get("/weather", (req, res) => {
+    const weatherData = loadWeather();
+    return res.status(200).json(weatherData);
 });
 
 // Ruta raíz

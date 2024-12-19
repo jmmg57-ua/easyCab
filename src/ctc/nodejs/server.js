@@ -44,6 +44,6 @@ app.post('/api/apikey/:newKey', (req, res) => {
 });
 
 // Iniciar el servidor
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`Servidor CTC ejecutándose en el puerto ${port}`);
 });

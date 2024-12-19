@@ -82,7 +82,9 @@ function App() {
             customers={data.customers}
             locations={data.locations}
           />
-          <CTCStatus />
+          <CTCStatus 
+            weather={data.weather}  
+          />
         </Section>
         <Section>
           <SectionTitle>Estado de Taxis</SectionTitle>
