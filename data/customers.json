@@ -1,13 +1,1 @@
-{
-    "a": {
-        "id": "a",
-        "status": "WAIT",
-        "position": [
-            15,
-            10
-        ],
-        "destination": "F",
-        "taxi_assigned": 2,
-        "picked_off": 0
-    }
-}
+{}

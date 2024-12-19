@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import styled from 'styled-components';
 
 const LogContainer = styled.div`
@@ -51,16 +51,6 @@ const EventType = styled.span`
 `;
 
 const ErrorLogs = ({ logs }) => {
-
-  // const logContainerRef = useRef(null);
-
-  // useEffect(() => {
-  //   // Desplaza el contenedor al final cada vez que los logs cambien
-  //   if (logContainerRef.current) {
-  //     logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-  //   }
-  // }, [logs]);
-
   return (
     <LogContainer>
       <LogHeader>Registro de Eventos del Sistema</LogHeader>

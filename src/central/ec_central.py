@@ -456,9 +456,7 @@ class ECCentral:
                 'taxi_id': taxi_id,
                 'type': 'RETURN_TO_BASE',
                 }
-                print(f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
-                self.log_audit("Taxis", f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
-                self.producer.send('taxi_instructions', instruction)
+                
 
             # Notificar al cliente solo si hay uno asignado
                 customer_id = self.taxis[taxi_id].customer_assigned
@@ -474,6 +472,9 @@ class ECCentral:
                     }
                     print(f"Notifying customer '{customer_id}'")
                     self.producer.send('taxi_responses', notification)
+                    print(f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
+                    self.log_audit("Taxis", f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
+                    self.producer.send('taxi_instructions', instruction)
 
             except KafkaError as e:
                 logger.error(f"Error in the order communication for taxi {taxi_id} {e}")
@@ -509,9 +510,6 @@ class ECCentral:
 
     def generate_table(self):
         """Genera la tabla de estado de taxis y clientes con el menú fijo 12 líneas debajo del título."""
-        if not self.taxis:
-            logger.error("Taxis not initialized or empty. Cannot generate table.")
-            return "No data available."
         
         table_lines = []
         table_lines.append("               *** EASY CAB ***        ")
@@ -986,14 +984,25 @@ class ECCentral:
                         "temperature": temperature,
                         "status": status
                     }
-                    self.write_queue.put((weather_file,weather_data))
-                    if data['status'] == "KO" and self.traffic_state == 1:
+                    self.write_queue.put((weather_file, weather_data))
+
+                    if status == "KO" and self.traffic_state == 1:
+                        self.log_audit("Clima", f"Tráfico cortado en {city}. Mandando taxis a la base.")
                         self.all_to_base()
-                
+                        self.traffic_state = 0  # Marcar tráfico como inactivo
+
+                    elif status == "OK" and self.traffic_state == 0:
+                        self.log_audit("Clima", f"Tráfico restaurado en {city}. Reanudando operaciones.")
+                        self.traffic_state = 1  # Marcar tráfico como activo
+
+                else:
+                    logger.error(f"Error en la respuesta del servidor CTC: Código {response.status_code}")
+            
             except RequestException as e:
                 logger.error(f"Error al consultar CTC: {e}")
             
             time.sleep(10)
+
 
     def all_to_base(self):
         """Manda todos los taxis a la base."""
@@ -1036,7 +1045,7 @@ class ECCentral:
         """Limpia el archivo JSON de taxis, eliminando todos los registros."""
         try:
             with open("/data/audit.json", 'w') as f:
-                json.dump({}, f, indent=4)
+                json.dump({} + "\n", f, indent=4)
             logger.info("Taxis JSON file cleared successfully.")
         except Exception as e:
             logger.error(f"Error clearing taxis JSON file: {e}")
@@ -1095,6 +1104,8 @@ class ECCentral:
         except KeyboardInterrupt:
             logger.info("Shutting down...")
             self.clear_taxis()
+            self.clear_audit()
+            self.clear_customers()
             self.close_producer()
             if self.consumer:
                 self.consumer.close()

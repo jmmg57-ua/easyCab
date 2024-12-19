@@ -11,5 +11,13 @@ PC3:
 - Dengine (cambiar ip de central y Kafka (PC1 para los 2) en extra_hosts)
 - Sensor
 
-Eliminar node modules y package-lock.json + npm install
+API_CENTRAL, CTC Y REGISTER:
+Eliminar node modules y package-lock.json + npm install 
 
+ORDEN DE DESPLIEGUE:
+
+1. Kafka y apis
+2. central
+3. taxis
+4. front
+5. customers
