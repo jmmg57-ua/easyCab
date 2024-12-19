@@ -1,69 +1,13 @@
 {
-<<<<<<< HEAD
-    "d": {
-        "id": "d",
-        "status": "UNATTENDED",
-        "position": [
-            5,
-            5
-        ],
-        "destination": "B",
-        "taxi_assigned": 0,
-        "picked_off": 0
-    },
-    "e": {
-        "id": "e",
-        "status": "UNATTENDED",
-        "position": [
-            15,
-            15
-        ],
-        "destination": "B",
-        "taxi_assigned": 0,
-        "picked_off": 0
-    },
-    "b": {
-        "id": "b",
-        "status": "UNATTENDED",
-        "position": [
-            10,
-            10
-        ],
-        "destination": "B",
-        "taxi_assigned": 0,
-        "picked_off": 0
-    },
     "a": {
         "id": "a",
         "status": "SERVICED",
         "position": [
-            8,
-            8
+            20,
+            20
         ],
-        "destination": "B",
+        "destination": "I",
         "taxi_assigned": 0,
-        "picked_off": 0
-    },
-    "c": {
-        "id": "c",
-        "status": "UNATTENDED",
-        "position": [
-            13,
-            13
-        ],
-        "destination": "C",
-        "taxi_assigned": 0,
-=======
-    "a": {
-        "id": "a",
-        "status": "WAIT",
-        "position": [
-            15,
-            1
-        ],
-        "destination": "G",
-        "taxi_assigned": 5,
->>>>>>> develop
         "picked_off": 0
     }
 }

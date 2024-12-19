@@ -100,12 +100,12 @@ class ECCentral:
                     request_timeout_ms=40000  # Incrementa el timeout para solicitudes
                 )
                 logger.info("Kafka consumer set up successfully")
-                self.log_audit("KAFKA", "Kafka setted up successfully")
+                #self.log_audit("KAFKA", "Kafka setted up successfully")
                 return
             except KafkaError as e:
                 retry_count += 1
                 logger.error(f"Failed to set up Kafka: {e}. Retrying in 5 seconds...")
-                self.log_audit("KAFKA", "Failed to set up Kafka")
+                #self.log_audit("KAFKA", "Failed to set up Kafka")
                 time.sleep(5)
         
         logger.critical("Failed to set up Kafka after 5 attempts. Exiting.")
@@ -121,11 +121,11 @@ class ECCentral:
                 self.locations[loc_id] = Location(loc_id, (x, y), "BLUE")
                 self.map[y - 1, x - 1] = loc_id
             logger.info("Map configuration loaded successfully.")
-            self.log_audit("MAP_LOAD", "Map configuration loaded successfully")
+            #self.log_audit("MAP_LOAD", "Map configuration loaded successfully")
 
         except Exception as e:
             logger.error(f"Error loading map configuration: {e}")
-            self.log_audit("MAP_ERROR", f"Error loading map configuration: {e}")
+            #self.log_audit("MAP_ERROR", f"Error loading map configuration: {e}")
 
     def load_taxis(self):
         """Carga los taxis desde el archivo JSON, soportando formato lista o diccionario."""
@@ -150,7 +150,7 @@ class ECCentral:
                             auth_status=int(taxi_info["authenticated"]),
                             token=taxi_info["token"]
                         )
-                    self.log_audit("Taxis", "Se han cargado los taxis desde el archivo")
+                    #self.log_audit("Taxis", "Se han cargado los taxis desde el archivo")
                 else:
                     raise ValueError("Unexpected JSON format. Must be a list or dictionary.")
         except FileNotFoundError:
@@ -159,7 +159,7 @@ class ECCentral:
             logger.error(f"Error decoding JSON: {e}. Starting with an empty dictionary.")
         except Exception as e:
             logger.error(f"Error loading taxis from JSON file: {e}")
-            self.log_audit("Taxis", "Error al cargar los taxis desde el archivo")
+            #self.log_audit("Taxis", "Error al cargar los taxis desde el archivo")
 
 
 
@@ -202,7 +202,7 @@ class ECCentral:
                             taxi_assigned=customer_info["taxi_assigned"],
                             picked_off=int(customer_info["picked_off"]),
                         )
-                    self.log_audit("Customers", "Se han cargado los customers desde el archivo")
+                    #self.log_audit("Customers", "Se han cargado los customers desde el archivo")
                 else:
                     raise ValueError("Unexpected JSON format. Must be a list or dictionary.")
         except FileNotFoundError:
@@ -211,7 +211,7 @@ class ECCentral:
             logger.error(f"Error decoding JSON: {e}. Starting with an empty dictionary.")
         except Exception as e:
             logger.error(f"Error loading customers from JSON file: {e}")
-            self.log_audit("Customers", f"Error loading customers from JSON file: {e}")
+            #self.log_audit("Customers", f"Error loading customers from JSON file: {e}")
 
 
 
@@ -284,12 +284,12 @@ class ECCentral:
             self.save_taxis()  # Guardar cambios en taxis.json
             conn.sendall(f"TOKEN {token}".encode('utf-8'))
             logger.info(f"Taxi {taxi_id} authenticated successfully with token.")
-            self.log_audit("Taxis", f"Taxi {taxi_id} authenticated successfully with token.")
+            #self.log_audit("Taxis", f"Taxi {taxi_id} authenticated successfully with token.")
             self.listen_to_taxi(taxi_id, conn)
 
         except Exception as e:
             logger.error(f"Error during taxi authentication: {e}")
-            self.log_audit("Taxis", f"Error during taxi authentication: {e}")
+            #self.log_audit("Taxis", f"Error during taxi authentication: {e}")
         finally:
             conn.close()
 
@@ -301,7 +301,7 @@ class ECCentral:
                 data = conn.recv(1024).decode()
                 if data == "":
                     logger.info(f"Taxi {taxi_id} has disconnected. Marking as KO.")
-                    self.log_audit("Taxis", f"Taxi {taxi_id} has disconnected. Marking as KO.")
+                    #self.log_audit("Taxis", f"Taxi {taxi_id} has disconnected. Marking as KO.")
                     if taxi_id in self.taxis:
                         taxi = self.taxis[taxi_id]
                         self.locations[taxi_id].id = "X"
@@ -343,10 +343,10 @@ class ECCentral:
             self.producer.flush()  # Asegura el envío inmediato
 
             logger.info(f"Trip completed sending to customer {taxi.customer_assigned}: {response}")
-            self.log_audit(f"Trip completed sending to customer {taxi.customer_assigned}: {response}")
+            #self.log_audit(f"Trip completed sending to customer {taxi.customer_assigned}: {response}")
         except KafkaError as e:
             logger.error(f"Failed to notify customer {taxi.customer_assigned}: {e}")
-            self.log_audit(f"Failed to notify customer {taxi.customer_assigned}: {e}")
+            #self.log_audit(f"Failed to notify customer {taxi.customer_assigned}: {e}")
 
 
     
@@ -394,15 +394,15 @@ class ECCentral:
                 self.map_changed = True  
                 self.save_taxis()
                  # Registrar evento en audit.json
-                self.log_audit(
-                    "Taxis", f"Taxi {taxi_id} está en {taxi.position} con status {status} y customer {customer_assigned}"      
-                )
+                #self.log_audit(
+                #    "Taxis", f"Taxi {taxi_id} está en {taxi.position} con status {status} y customer {customer_assigned}"      
+                #)
                 return taxi 
             else:
                 logger.warning(f"Token missmatch {taxi_id}")
-                self.log_audit(
-                    "Taxis",f"Token missmatch {taxi_id}"      
-                )
+                #self.log_audit(
+                #    "Taxis",f"Token missmatch {taxi_id}"      
+                #)
                 return None           
 
         else:
@@ -455,7 +455,7 @@ class ECCentral:
                 'type': 'RETURN_TO_BASE',
                 }
                 print(f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
-                self.log_audit("Taxis", f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
+                #self.log_audit("Taxis", f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
                 self.producer.send('taxi_instructions', instruction)
 
             # Notificar al cliente solo si hay uno asignado
@@ -650,11 +650,11 @@ class ECCentral:
             self.producer.flush()  # Asegurarse de que el mensaje se envíe inmediatamente
             
             # Registrar evento de mapa en audit.json
-            self.log_audit("Map Update", "Enviando el mapa a todos los taxis")
+            #self.log_audit("Map Update", "Enviando el mapa a todos los taxis")
 
         except Exception as e:
             logger.error(f"Error al enviar el mapa a los taxis: {e}")
-            self.log_audit("MAP_ERROR", f"Error broadcasting map: {e}")
+            #self.log_audit("MAP_ERROR", f"Error broadcasting map: {e}")
 
 
 
@@ -680,13 +680,13 @@ class ECCentral:
             customer.taxi_assigned=0
             customer.picked_off=0
             self.save_customers()
-        self.log_audit("Customers", "Customer registrado con éxito")
+        #self.log_audit("Customers", "Customer registrado con éxito")
         self.map_changed = True
 
 
     def process_customer_request(self, request):
         print(f"RECIBIDA REQUEST: {request}")
-        self.log_audit("Customers", f"RECIBIDA REQUEST: {request}")
+        #self.log_audit("Customers", f"RECIBIDA REQUEST: {request}")
         if request['status'] == "REQUEST":
             customer_id = request['customer_id']
             destination = request['destination']
@@ -725,12 +725,12 @@ class ECCentral:
                 self.update_customer(customer_id, available_taxi.id)
                 self.map_changed = True
                 self.notify_customer_assignment(customer_id, available_taxi)
-                self.log_audit("Customers", f"Taxi {available_taxi.id} asignado a cliente {customer_id}")
+                #self.log_audit("Customers", f"Taxi {available_taxi.id} asignado a cliente {customer_id}")
                 self.send_taxi_instruction(available_taxi, customer_id, self.customers[customer_id].position, self.customers[customer_id].destination)
                 return
             else:
                 logger.info(f"No se encontró taxi para el cliente '{customer_id}', reintentando en 3 segundos...")
-                self.log_audit("Customers", f"No se ha encontrado taxi para el cliente {customer_id}")
+                #self.log_audit("Customers", f"No se ha encontrado taxi para el cliente {customer_id}")
                 time.sleep(3)
                 retry_count += 1
 
@@ -770,7 +770,7 @@ class ECCentral:
                 self.save_customers()
                 self.assign_taxi(customer_id, customer.position, customer.destination)
         self.map_changed = True
-        self.log_audit("Customers", f"Customer {customer_id} actualizado")
+        #self.log_audit("Customers", f"Customer {customer_id} actualizado")
 
 
     def send_taxi_instruction(self, taxi, customer_id, pickup_location, destination):
@@ -788,7 +788,7 @@ class ECCentral:
         self.producer.send('taxi_instructions', instruction)
         self.producer.flush()  # Asegura el envío inmediato
         logger.info(f"Instructions sent to taxi {taxi.id} for customer '{customer_id}'")
-        self.log_audit("Taxis", f"Instructions sent to taxi {taxi.id} for customer '{customer_id}'")
+        #self.log_audit("Taxis", f"Instructions sent to taxi {taxi.id} for customer '{customer_id}'")
 
     def notify_customer_assignment(self, customer_id, taxi):
         """Envía una respuesta al cliente confirmando la asignación del taxi."""
@@ -863,12 +863,12 @@ class ECCentral:
             try:
                 for message in self.consumer:
                     if message.topic == 'taxi_requests':
-                        self.log_audit("Kafka", f"Mensaje recibido en el topico 'taxi_requests': {message.value}")
+                        #self.log_audit("Kafka", f"Mensaje recibido en el topico 'taxi_requests': {message.value}")
                         data = message.value
                         self.requests_q.put(data)
                         
                     elif message.topic == 'taxi_updates':
-                        self.log_audit("Kafka", f"Mensaje recibido en el topico 'taxi_updates': {message.value}")
+                        #self.log_audit("Kafka", f"Mensaje recibido en el topico 'taxi_updates': {message.value}")
                         data = message.value
                         self.updates_q.put(data)
 
@@ -898,7 +898,7 @@ class ECCentral:
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind(('0.0.0.0', self.listen_port))
         self.server_socket.listen(5)  
-        self.log_audit("Sockets", f"Listening for taxi connections on port {self.listen_port}...")
+        #self.log_audit("Sockets", f"Listening for taxi connections on port {self.listen_port}...")
         logger.info(f"Listening for taxi connections on port {self.listen_port}...")
 
         try:
@@ -985,7 +985,7 @@ class ECCentral:
     def all_to_base(self):
         """Manda todos los taxis a la base."""
         logger.info("TRÁFICO CORTADO, TODOS LOS TAXIS A BASE")
-        self.log_audit("Clima", "TRÁFICO CORTADO, TODOS LOS TAXIS A BASE")
+        #self.log_audit("Clima", "TRÁFICO CORTADO, TODOS LOS TAXIS A BASE")
         for taxi in self.taxis.values():
 
             if taxi.auth_status == 1:
@@ -998,7 +998,7 @@ class ECCentral:
                 with open(file, 'w') as f:
                     json.dump(data, f, indent=4)
                 self.write_queue.task_done()
-                self.log_audit("Escritura", f"Escrito en el archivo {file}, los datos: {data}")
+                #self.log_audit("Escritura", f"Escrito en el archivo {file}, los datos: {data}")
             except Exception as e:
                 logger.error(f"Error writing to {file}: {e}")
     

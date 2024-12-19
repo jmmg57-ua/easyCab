@@ -5,10 +5,7 @@ import time
 NODEJS_URL = "http://localhost:5000"
 current_city = "Alicante"
 current_api_key = "70656a4c102bee1ed903fcb7e3938267"
-<<<<<<< HEAD
-=======
 
->>>>>>> develop
 
 def update_nodejs_city(city):
     try:
@@ -50,21 +47,6 @@ def get_traffic_status():
     except Exception as e:
         print(f"Error al comunicarse con el servidor: {e}")
         return None
-
-def update_api_key(new_key):
-    try:
-        response = requests.post(f"{NODEJS_URL}/api/apikey/{new_key}")
-        if response.status_code == 200:
-            global current_api_key
-            current_api_key = new_key
-            print(f"API Key actualizada correctamente")
-            return True
-        else:
-            print("Error al actualizar la API Key")
-            return False
-    except Exception as e:
-        print(f"Error al comunicarse con el servidor: {e}")
-        return False
 
 def main_menu():
     global current_city
