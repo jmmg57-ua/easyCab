@@ -205,6 +205,8 @@ class DigitalEngine:
             return            
 
         elif instruction['type'] == 'MOVE':
+            if self.destination == [1,1]:
+                return
             self.pickup = instruction['pickup']
             logger.info("INSTRUCCION MOVE")
             self.status = "BUSY"
@@ -220,7 +222,7 @@ class DigitalEngine:
             logger.info("INSTRUCCION RETURN")
             self.picked_off = 1
             self.destination = [1, 1]
-            self.status = "BUSY"
+            self.status = "RETURNING"
             self.color = "GREEN"
             self.customer_asigned = "x"
             self.picked_off = 0

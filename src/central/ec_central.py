@@ -455,9 +455,7 @@ class ECCentral:
                 instruction = {
                 'taxi_id': taxi_id,
                 'type': 'RETURN_TO_BASE',
-                }
-                self.taxis[taxi_id].status == "BUSY"
-                
+                }                
 
             # Notificar al cliente solo si hay uno asignado
                 customer_id = self.taxis[taxi_id].customer_assigned
@@ -688,7 +686,12 @@ class ECCentral:
     def process_customer_request(self, request):
         print(f"RECIBIDA REQUEST: {request}")
         self.log_audit("Customers", f"RECIBIDA REQUEST: {request}")
-        if request['status'] == "REQUEST":
+        if request['status'] == "COMPLETED":
+            del self.customers[request['customer_id']]
+            del self.locations[request['customer_id']]
+            self.save_customers()
+            self.map_changed = True
+        elif request['status'] == "REQUEST":
             customer_id = request['customer_id']
             destination = request['destination']
             customer_location = request['customer_location']
@@ -697,6 +700,7 @@ class ECCentral:
         else:
             del self.customers[request['customer_id']]
             del self.locations[request['customer_id']]
+            self.save_customers()
             self.map_changed = True
 
     def assign_taxi(self, customer_id, customer_location, destination):
@@ -1010,10 +1014,37 @@ class ECCentral:
         """Manda todos los taxis a la base."""
         logger.info("TRÁFICO CORTADO, TODOS LOS TAXIS A BASE")
         self.log_audit("Clima", "TRÁFICO CORTADO, TODOS LOS TAXIS A BASE")
-        for taxi in self.taxis.values():
+        
+        active_taxis = {taxi_id: taxi for taxi_id, taxi in self.taxis.items() if taxi.auth_status == 1}
+        pending_taxis = set(active_taxis.keys())
+        
+        # Intentar enviar `RETURN_TO_BASE` hasta que todos los taxis confirmen
+        while pending_taxis:
+            for taxi_id in list(pending_taxis):
+                try:
+                     # Verificar que el taxi todavía existe en self.taxis
+                    if taxi_id not in self.taxis:
+                        logger.warning(f"Taxi {taxi_id} no encontrado. Removiendo de la lista pendiente.")
+                        pending_taxis.remove(taxi_id)
+                        continue
+                    self.return_to_base(taxi_id)
+                    logger.info(f"Instrucción RETURN_TO_BASE enviada al taxi {taxi_id}")
+                
+                    # Verificar el estado del taxi
+                    if self.taxis[taxi_id].status == "RETURNING":
+                        pending_taxis.remove(taxi_id)
+            
+                except KeyError:
+                    logger.warning(f"Taxi {taxi_id} no está en el sistema. Eliminando de la lista pendiente.")
+                    pending_taxis.remove(taxi_id)
+                except Exception as e:
+                    logger.error(f"Error enviando RETURN_TO_BASE al taxi {taxi_id}: {e}")
 
-            if taxi.auth_status == 1:
-                self.return_to_base(taxi.id)
+            # Esperar antes del siguiente intento
+            time.sleep(2)
+
+        logger.info("Todos los taxis están en camino a la base.")
+        self.log_audit("Clima", "Todos los taxis están en camino a la base.")
 
     def process_write_queue(self):
         while True:
