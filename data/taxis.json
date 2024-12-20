@@ -1,1 +1,28 @@
-{}
+{
+    "2": {
+        "id": "2",
+        "status": "FREE",
+        "color": "RED",
+        "position": [
+            20,
+            1
+        ],
+        "customer_assigned": "x",
+        "picked_off": 0,
+        "authenticated": 1,
+        "token": "6c1d8535-d85e-4092-b0f1-18797bc77737"
+    },
+    "1": {
+        "id": "1",
+        "status": "FREE",
+        "color": "RED",
+        "position": [
+            15,
+            1
+        ],
+        "customer_assigned": "x",
+        "picked_off": 0,
+        "authenticated": 1,
+        "token": "48b3c9e2-6db0-4fbd-a105-2b0ca9b06641"
+    }
+}

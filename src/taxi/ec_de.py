@@ -247,6 +247,7 @@ class DigitalEngine:
                 
                 elif self.status == "KO" or self.color == "RED":
                     time.sleep(1)
+                    self.send_position_update()
                     continue
                 
                 # Finalizar el viaje si llega al destino
@@ -612,7 +613,7 @@ if __name__ == "__main__":
     kafka_broker = sys.argv[3]
     ec_s_ip = sys.argv[4]
     ec_s_port = int(sys.argv[5])
-    taxi_id = int(sys.argv[6])
+    taxi_id = sys.argv[6]
     ec_registry_port = int(sys.argv[7])
     
     digital_engine = DigitalEngine(ec_central_ip, ec_central_port, kafka_broker, ec_s_ip, ec_s_port, taxi_id, ec_registry_port)

@@ -35,7 +35,7 @@ class Customer:
     status: str  #UNATTENDED, WAITING, TRANSIT, SERVICED, 
     position: Tuple[int, int]
     destination: str
-    taxi_assigned: int
+    taxi_assigned: str
     picked_off: int
 
 @dataclass
@@ -140,7 +140,7 @@ class ECCentral:
                 taxi_data = json.loads(content)
                 if isinstance(taxi_data, dict):
                     for taxi_id, taxi_info in taxi_data.items():
-                        self.taxis[int(taxi_id)] = Taxi(
+                        self.taxis[taxi_id] = Taxi(
                             id=taxi_info["id"],
                             status=taxi_info["status"],
                             color=taxi_info["color"],
@@ -194,7 +194,7 @@ class ECCentral:
                 customer_data = json.loads(content)
                 if isinstance(customer_data, dict):
                     for customer_id, customer_info in customer_data.items():
-                        self.customers[int(customer_id)] = Customer(
+                        self.customers[customer_id] = Customer(
                             id=customer_info["id"],
                             status=customer_info["status"],
                             position=tuple(customer_info["position"]),
@@ -223,7 +223,7 @@ class ECCentral:
                 "status": customer.status,
                 "position": list(customer.position),
                 "destination": customer.destination,
-                "taxi_assigned": int(customer.taxi_assigned),
+                "taxi_assigned": customer.taxi_assigned,
                 "picked_off": int(customer.picked_off)
             }
             for customer in self.customers.values()
@@ -259,7 +259,7 @@ class ECCentral:
         logger.info(f"Secure connection from taxi at {addr}")
         try:
             data = conn.recv(1024).decode('utf-8')
-            taxi_id = int(data.strip())
+            taxi_id = data.strip()
 
             # Verificar si el taxi existe en memoria
             if taxi_id not in self.taxis:
@@ -456,6 +456,7 @@ class ECCentral:
                 'taxi_id': taxi_id,
                 'type': 'RETURN_TO_BASE',
                 }
+                self.taxis[taxi_id].status == "BUSY"
                 
 
             # Notificar al cliente solo si hay uno asignado
@@ -472,9 +473,9 @@ class ECCentral:
                     }
                     print(f"Notifying customer '{customer_id}'")
                     self.producer.send('taxi_responses', notification)
-                    print(f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
-                    self.log_audit("Taxis", f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
-                    self.producer.send('taxi_instructions', instruction)
+                print(f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
+                self.log_audit("Taxis", f"Central ordered the taxi {taxi_id} to RETURN TO BASE")
+                self.producer.send('taxi_instructions', instruction)
 
             except KafkaError as e:
                 logger.error(f"Error in the order communication for taxi {taxi_id} {e}")
@@ -768,6 +769,7 @@ class ECCentral:
                 customer.taxi_assigned=0
                 customer.picked_off=0
                 self.save_customers()
+                self.map_changed = True
                 self.assign_taxi(customer_id, customer.position, customer.destination)
         self.map_changed = True
         self.log_audit("Customers", f"Customer {customer_id} actualizado")
@@ -863,12 +865,12 @@ class ECCentral:
             try:
                 for message in self.consumer:
                     if message.topic == 'taxi_requests':
-                        self.log_audit("Kafka", f"Mensaje recibido en el topico 'taxi_requests': {message.value}")
+                        self.log_audit("Kafka", f"Mensaje recibido en el topico 'taxi_requests'")
                         data = message.value
                         self.requests_q.put(data)
                         
                     elif message.topic == 'taxi_updates':
-                        self.log_audit("Kafka", f"Mensaje recibido en el topico 'taxi_updates': {message.value}")
+                        self.log_audit("Kafka", f"Mensaje recibido en el topico 'taxi_updates'")
                         data = message.value
                         self.updates_q.put(data)
 
@@ -935,7 +937,7 @@ class ECCentral:
                     if len(command_parts) == 2:  # Comando con dos parámetros
                         action = command_parts[0]
                         try:
-                            taxi_id = int(command_parts[1])
+                            taxi_id = command_parts[1]
                             if action.lower() == "b":  # Return to base
                                 self.return_to_base(taxi_id)
                             else:  # Cambiar destino
@@ -948,7 +950,7 @@ class ECCentral:
 
                     elif len(command_parts) == 1:  # Parar o continuar
                         try:
-                            taxi_id = int(command_parts[0])
+                            taxi_id = command_parts[0]
                             self.stop_continue(taxi_id)
                         except ValueError:
                             print("Formato incorrecto. Consulte el menú para las opciones.")
@@ -1020,7 +1022,7 @@ class ECCentral:
                 with open(file, 'w') as f:
                     json.dump(data, f, indent=4)
                 self.write_queue.task_done()
-                self.log_audit("Escritura", f"Escrito en el archivo {file}, los datos: {data}")
+                self.log_audit("Escritura", f"Escribiendo en el archivo {file}")
             except Exception as e:
                 logger.error(f"Error writing to {file}: {e}")
     

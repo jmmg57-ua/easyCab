@@ -1,1 +1,46 @@
-{}
+{
+    "e": {
+        "id": "e",
+        "status": "UNATTENDED",
+        "position": [
+            5,
+            20
+        ],
+        "destination": "F",
+        "taxi_assigned": 0,
+        "picked_off": 0
+    },
+    "a": {
+        "id": "a",
+        "status": "SERVICED",
+        "position": [
+            20,
+            1
+        ],
+        "destination": "G",
+        "taxi_assigned": 0,
+        "picked_off": 0
+    },
+    "b": {
+        "id": "b",
+        "status": "UNATTENDED",
+        "position": [
+            10,
+            10
+        ],
+        "destination": "E",
+        "taxi_assigned": 0,
+        "picked_off": 0
+    },
+    "c": {
+        "id": "c",
+        "status": "UNATTENDED",
+        "position": [
+            3,
+            12
+        ],
+        "destination": "C",
+        "taxi_assigned": 0,
+        "picked_off": 0
+    }
+}
